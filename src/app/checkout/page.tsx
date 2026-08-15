@@ -338,7 +338,7 @@ export default function CheckoutPage() {
           contact: "9999999999"
         },
         theme: {
-          color: "#0a0a0a"
+          color: "#1A1A1A"
         }
       };
 
@@ -363,8 +363,8 @@ export default function CheckoutPage() {
       <div className="min-h-screen bg-ivory flex flex-col items-center justify-center px-6 text-center">
         <div className="w-12 h-12 border border-line border-t-bronze rounded-full animate-spin mb-8"></div>
         <p className="eyebrow text-bronze-deep mb-3">One moment</p>
-        <h2 className="font-display font-light text-3xl text-black mb-3">Verifying Payment</h2>
-        <p className="font-sans text-[#5C5C5C] max-w-sm leading-relaxed">
+        <h2 className="font-display font-light text-3xl text-ink mb-3">Verifying Payment</h2>
+        <p className="font-sans text-muted max-w-sm leading-relaxed">
           Please wait while we confirm your order. Do not close this window.
         </p>
       </div>
@@ -378,20 +378,20 @@ export default function CheckoutPage() {
         {/* Header */}
         <Breadcrumbs className="mb-6" />
         <Reveal>
-          <h1 className="font-display font-light text-[clamp(2.5rem,5vw,4rem)] leading-[1.08] text-black">
+          <h1 className="font-display font-light text-[clamp(2.5rem,5vw,4rem)] leading-[1.08] text-ink">
             Checkout
           </h1>
 
           {/* Editorial stepper */}
           <div className="flex items-center gap-5 mt-8">
             <span
-              className={`eyebrow transition-colors ${step === "shipping" ? "text-black" : "text-faint"}`}
+              className={`eyebrow transition-colors ${step === "shipping" ? "text-ink" : "text-faint"}`}
             >
               01 · Shipping
             </span>
             <span className="h-px w-8 bg-line" />
             <span
-              className={`eyebrow transition-colors ${step === "payment" ? "text-black" : "text-faint"}`}
+              className={`eyebrow transition-colors ${step === "payment" ? "text-ink" : "text-faint"}`}
             >
               02 · Payment
             </span>
@@ -408,7 +408,7 @@ export default function CheckoutPage() {
                 {/* Step 1: SHIPPING */}
                 <div>
                   <p className="eyebrow text-bronze-deep mb-3">Step One</p>
-                  <h2 className="font-display font-light text-[clamp(1.75rem,3.5vw,2.75rem)] leading-[1.08] text-black">
+                  <h2 className="font-display font-light text-[clamp(1.75rem,3.5vw,2.75rem)] leading-[1.08] text-ink">
                     Shipping Address
                   </h2>
                 </div>
@@ -426,22 +426,22 @@ export default function CheckoutPage() {
                         // ring and dot inside it were written for a dark fill
                         // (`cream` used to be #111). `ink` is that fill.
                         ? "border-ink bg-ink"
-                            : "border-[#8A8580] bg-white hover:border-black"
+                            : "border-line-strong bg-white hover:border-ink"
                         }`}
                       >
                         {/* Selection indicator */}
                         <span
                           className={`absolute top-5 right-5 w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${
-                            isSelected ? "border-ivory" : "border-[#8A8580]"
+                            isSelected ? "border-ivory" : "border-line-strong"
                           }`}
                         >
                           {isSelected && <span className="w-2 h-2 rounded-full bg-ivory" />}
                         </span>
 
-                        <p className={`font-display text-lg capitalize mb-2 pr-6 ${isSelected ? "text-ivory" : "text-black"}`}>
+                        <p className={`font-display text-lg capitalize mb-2 pr-6 ${isSelected ? "text-ivory" : "text-ink"}`}>
                           {addr.name}
                         </p>
-                        <p className={`font-sans text-sm leading-relaxed capitalize ${isSelected ? "text-ivory/75" : "text-[#5C5C5C]"}`}>
+                        <p className={`font-sans text-sm leading-relaxed capitalize ${isSelected ? "text-ivory/75" : "text-muted"}`}>
                           {addr.line1}<br />
                           {addr.line2}
                         </p>
@@ -452,7 +452,7 @@ export default function CheckoutPage() {
                   {/* New Address tile */}
                   <button
                     onClick={() => setIsAddressModalOpen(true)}
-                    className="border border-dashed border-[#8A8580] p-6 min-h-[120px] flex flex-col items-center justify-center gap-2 text-[#5C5C5C] hover:border-black hover:text-black transition-colors"
+                    className="border border-dashed border-line-strong p-6 min-h-[120px] flex flex-col items-center justify-center gap-2 text-muted hover:border-ink hover:text-ink transition-colors"
                   >
                     <span className="text-2xl font-light leading-none">+</span>
                     <span className="eyebrow">New Address</span>
@@ -466,14 +466,14 @@ export default function CheckoutPage() {
                 {/* Back to shipping */}
                 <button
                   onClick={() => setStep("shipping")}
-                  className="self-start font-sans text-[11px] uppercase tracking-[0.14em] text-[#5C5C5C] hover:text-black link-underline"
+                  className="self-start font-sans text-[11px] uppercase tracking-[0.14em] text-muted hover:text-ink link-underline"
                 >
                   ← Back to Shipping
                 </button>
 
                 <div>
                   <p className="eyebrow text-bronze-deep mb-3">Step Two</p>
-                  <h2 className="font-display font-light text-[clamp(1.75rem,3.5vw,2.75rem)] leading-[1.08] text-black">
+                  <h2 className="font-display font-light text-[clamp(1.75rem,3.5vw,2.75rem)] leading-[1.08] text-ink">
                     Payment Method
                   </h2>
                 </div>
@@ -483,25 +483,25 @@ export default function CheckoutPage() {
                   <button
                     onClick={() => setPaymentMethod("online")}
                     aria-pressed={paymentMethod === "online"}
-                    className={`text-left border p-6 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-black ${
+                    className={`text-left border p-6 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ink ${
                       paymentMethod === "online"
                         // Selected reads as an inverted card — the light type,
                         // ring and dot inside it were written for a dark fill
                         // (`cream` used to be #111). `ink` is that fill.
                         ? "border-ink bg-ink"
-                        : "border-[#8A8580] bg-white hover:border-black"
+                        : "border-line-strong bg-white hover:border-ink"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0">
-                        <p className={`font-sans font-medium ${paymentMethod === "online" ? "text-ivory" : "text-black"}`}>Online Payment (Prepaid)</p>
-                        <p className={`font-sans text-sm leading-relaxed mt-1 ${paymentMethod === "online" ? "text-ivory/75" : "text-[#5C5C5C]"}`}>
+                        <p className={`font-sans font-medium ${paymentMethod === "online" ? "text-ivory" : "text-ink"}`}>Online Payment (Prepaid)</p>
+                        <p className={`font-sans text-sm leading-relaxed mt-1 ${paymentMethod === "online" ? "text-ivory/75" : "text-muted"}`}>
                           Pay securely via card, UPI, or netbanking with Razorpay.
                         </p>
                       </div>
                       <span
                         className={`mt-1 w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 transition-colors ${
-                          paymentMethod === "online" ? "border-ivory" : "border-[#8A8580]"
+                          paymentMethod === "online" ? "border-ivory" : "border-line-strong"
                         }`}
                       >
                         {paymentMethod === "online" && <span className="w-2 h-2 rounded-full bg-ivory" />}
@@ -513,25 +513,25 @@ export default function CheckoutPage() {
                   <button
                     onClick={() => setPaymentMethod("cod")}
                     aria-pressed={paymentMethod === "cod"}
-                    className={`text-left border p-6 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-black ${
+                    className={`text-left border p-6 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ink ${
                       paymentMethod === "cod"
                         // Selected reads as an inverted card — the light type,
                         // ring and dot inside it were written for a dark fill
                         // (`cream` used to be #111). `ink` is that fill.
                         ? "border-ink bg-ink"
-                        : "border-[#8A8580] bg-white hover:border-black"
+                        : "border-line-strong bg-white hover:border-ink"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0">
-                        <p className={`font-sans font-medium ${paymentMethod === "cod" ? "text-ivory" : "text-black"}`}>Cash on Delivery</p>
-                        <p className={`font-sans text-sm leading-relaxed mt-1 ${paymentMethod === "cod" ? "text-ivory/75" : "text-[#5C5C5C]"}`}>
+                        <p className={`font-sans font-medium ${paymentMethod === "cod" ? "text-ivory" : "text-ink"}`}>Cash on Delivery</p>
+                        <p className={`font-sans text-sm leading-relaxed mt-1 ${paymentMethod === "cod" ? "text-ivory/75" : "text-muted"}`}>
                           Pay a 10% advance online now; pay the balance in cash on delivery.
                         </p>
                       </div>
                       <span
                         className={`mt-1 w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 transition-colors ${
-                          paymentMethod === "cod" ? "border-ivory" : "border-[#8A8580]"
+                          paymentMethod === "cod" ? "border-ivory" : "border-line-strong"
                         }`}
                       >
                         {paymentMethod === "cod" && <span className="w-2 h-2 rounded-full bg-ivory" />}
@@ -653,7 +653,7 @@ export default function CheckoutPage() {
       {isAddressModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            className="absolute inset-0 bg-ink/50 backdrop-blur-sm"
             onClick={() => setIsAddressModalOpen(false)}
           />
           <div className="relative bg-ivory border border-line w-full max-w-lg shadow-xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
@@ -661,14 +661,14 @@ export default function CheckoutPage() {
             <div className="flex items-center justify-between p-6 sm:p-8 border-b border-line">
               <div>
                 <p className="eyebrow text-bronze-deep mb-2">Shipping</p>
-                <h2 className="font-display font-light text-2xl text-black">
+                <h2 className="font-display font-light text-2xl text-ink">
                   New Address
                 </h2>
               </div>
               <button
                 onClick={() => setIsAddressModalOpen(false)}
                 aria-label="Close"
-                className="w-9 h-9 flex items-center justify-center text-xl leading-none text-[#5C5C5C] hover:text-black border border-[#8A8580] hover:border-black transition-colors"
+                className="w-9 h-9 flex items-center justify-center text-xl leading-none text-muted hover:text-ink border border-line-strong hover:border-ink transition-colors"
               >
                 ×
               </button>
@@ -677,37 +677,37 @@ export default function CheckoutPage() {
             {/* Form */}
             <div className="p-6 sm:p-8 flex flex-col gap-5">
               <div>
-                <label className="block font-sans text-[11px] uppercase tracking-[0.14em] text-[#5C5C5C] mb-2">Street Address</label>
+                <label className="block font-sans text-[11px] uppercase tracking-[0.14em] text-muted mb-2">Street Address</label>
                 <input
                   type="text"
                   value={newAddressForm.street}
                   onChange={(e) => { setNewAddressForm({ ...newAddressForm, street: e.target.value }); setAddressErrors(prev => ({ ...prev, street: '' })); }}
                   placeholder="e.g. 123 Marine Drive"
-                  className={`w-full bg-white border rounded-none px-4 py-3 font-sans text-base text-black focus:outline-none focus:border-black placeholder:text-[#6B6B6B] ${addressErrors.street ? 'border-red-400' : 'border-line-strong'}`}
+                  className={`w-full bg-white border rounded-none px-4 py-3 font-sans text-base text-ink focus:outline-none focus:border-ink placeholder:text-muted ${addressErrors.street ? 'border-red-400' : 'border-line-strong'}`}
                 />
                 {addressErrors.street && <p className="text-red-500 text-xs mt-1.5">{addressErrors.street}</p>}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                 <div>
-                  <label className="block font-sans text-[11px] uppercase tracking-[0.14em] text-[#5C5C5C] mb-2">City <span className="text-red-500">*</span></label>
+                  <label className="block font-sans text-[11px] uppercase tracking-[0.14em] text-muted mb-2">City <span className="text-red-500">*</span></label>
                   <input
                     type="text"
                     value={newAddressForm.city}
                     onChange={(e) => { setNewAddressForm({ ...newAddressForm, city: e.target.value }); setAddressErrors(prev => ({ ...prev, city: '' })); }}
                     placeholder="Kochi"
-                    className={`w-full bg-white border rounded-none px-4 py-3 font-sans text-base text-black focus:outline-none focus:border-black placeholder:text-[#6B6B6B] ${addressErrors.city ? 'border-red-400' : 'border-line-strong'}`}
+                    className={`w-full bg-white border rounded-none px-4 py-3 font-sans text-base text-ink focus:outline-none focus:border-ink placeholder:text-muted ${addressErrors.city ? 'border-red-400' : 'border-line-strong'}`}
                   />
                   {addressErrors.city && <p className="text-red-500 text-xs mt-1.5">{addressErrors.city}</p>}
                 </div>
                 <div>
-                  <label className="block font-sans text-[11px] uppercase tracking-[0.14em] text-[#5C5C5C] mb-2">State <span className="text-red-500">*</span></label>
+                  <label className="block font-sans text-[11px] uppercase tracking-[0.14em] text-muted mb-2">State <span className="text-red-500">*</span></label>
                   <input
                     type="text"
                     value={newAddressForm.state}
                     onChange={(e) => { setNewAddressForm({ ...newAddressForm, state: e.target.value }); setAddressErrors(prev => ({ ...prev, state: '' })); }}
                     placeholder="Kerala"
-                    className={`w-full bg-white border rounded-none px-4 py-3 font-sans text-base text-black focus:outline-none focus:border-black placeholder:text-[#6B6B6B] ${addressErrors.state ? 'border-red-400' : 'border-line-strong'}`}
+                    className={`w-full bg-white border rounded-none px-4 py-3 font-sans text-base text-ink focus:outline-none focus:border-ink placeholder:text-muted ${addressErrors.state ? 'border-red-400' : 'border-line-strong'}`}
                   />
                   {addressErrors.state && <p className="text-red-500 text-xs mt-1.5">{addressErrors.state}</p>}
                 </div>
@@ -715,24 +715,24 @@ export default function CheckoutPage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                 <div>
-                  <label className="block font-sans text-[11px] uppercase tracking-[0.14em] text-[#5C5C5C] mb-2">PIN Code <span className="text-red-500">*</span></label>
+                  <label className="block font-sans text-[11px] uppercase tracking-[0.14em] text-muted mb-2">PIN Code <span className="text-red-500">*</span></label>
                   <input
                     type="text"
                     value={newAddressForm.zip}
                     onChange={(e) => { setNewAddressForm({ ...newAddressForm, zip: e.target.value }); setAddressErrors(prev => ({ ...prev, zip: '' })); }}
                     placeholder="682001"
-                    className={`w-full bg-white border rounded-none px-4 py-3 font-sans text-base text-black focus:outline-none focus:border-black placeholder:text-[#6B6B6B] ${addressErrors.zip ? 'border-red-400' : 'border-line-strong'}`}
+                    className={`w-full bg-white border rounded-none px-4 py-3 font-sans text-base text-ink focus:outline-none focus:border-ink placeholder:text-muted ${addressErrors.zip ? 'border-red-400' : 'border-line-strong'}`}
                   />
                   {addressErrors.zip && <p className="text-red-500 text-xs mt-1.5">{addressErrors.zip}</p>}
                 </div>
                 <div>
-                  <label className="block font-sans text-[11px] uppercase tracking-[0.14em] text-[#5C5C5C] mb-2">Country</label>
+                  <label className="block font-sans text-[11px] uppercase tracking-[0.14em] text-muted mb-2">Country</label>
                   <input
                     type="text"
                     value={newAddressForm.country}
                     onChange={(e) => setNewAddressForm({ ...newAddressForm, country: e.target.value })}
                     placeholder="India"
-                    className="w-full bg-white border border-[#8A8580] rounded-none px-4 py-3 font-sans text-base text-black focus:outline-none focus:border-black placeholder:text-[#6B6B6B]"
+                    className="w-full bg-white border border-line-strong rounded-none px-4 py-3 font-sans text-base text-ink focus:outline-none focus:border-ink placeholder:text-muted"
                   />
                 </div>
               </div>

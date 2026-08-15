@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { fetchAbout } from "../../lib/about";
-import { fetchStory } from "../../lib/story";
 import AboutClient from "./AboutClient";
 
 // Always reflect the latest studio edits — no build-time caching of the content.
@@ -17,12 +16,11 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function AboutPage() {
-  // Both feeds in parallel: the About singleton, and the story sections the
-  // studio already maintains under Story Page.
-  const [about, story] = await Promise.all([
-    fetchAbout({ noStore: true }),
-    fetchStory({ noStore: true }),
-  ]);
+  /* One feed. The StorySection list used to be fetched here and rendered
+     mid-page; the redesign gives About its own story block, authored on the
+     About singleton alongside the others. The feed itself is untouched and
+     still drives /story. */
+  const about = await fetchAbout({ noStore: true });
 
-  return <AboutClient about={about} story={story?.sections ?? []} />;
+  return <AboutClient about={about} />;
 }

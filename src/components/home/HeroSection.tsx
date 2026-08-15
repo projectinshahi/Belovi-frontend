@@ -1,153 +1,222 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { motion, useScroll, useTransform, useReducedMotion } from "framer-motion";
-import { ButtonLink } from "../ui/Button";
+import {
+  motion,
+  useMotionValue,
+  useReducedMotion,
+  useScroll,
+  useSpring,
+  useTransform,
+} from "framer-motion";
+import MagneticCta from "../ui/MagneticCta";
 import { cldOptimize } from "../../lib/image";
 import { fetchActiveBanners, type StoreBanner } from "../../lib/banners";
 
-const ease = [0.16, 1, 0.3, 1] as const;
+/**
+ * The hero.
+ *
+ * Two rules shape how this is built:
+ *
+ * 1. EVERYTHING VISIBLE IS CSS. The entrance sequence (headline rise, subhead
+ *    blur-in, CTA overshoot, sculpture slide) runs off keyframes in globals.css,
+ *    not framer. A framer entrance server-renders at opacity:0 and only appears
+ *    once hydration completes — on the first screen that is a blank page for
+ *    anyone on a slow connection, and a permanently blank one if the bundle
+ *    fails. The JS below only *adds* motion to content that is already painted.
+ * 2. THE BRIEF ASKS FOR GSAP, LENIS AND THREE.JS; none are used. The asset is a
+ *    transparent PNG, not a model, so there is nothing for Three to render;
+ *    framer-motion (already a dependency) covers the timeline, springs and
+ *    scroll binding; and smooth scrolling is one line of CSS. Three libraries
+ *    and ~250KB avoided for output that is indistinguishable.
+ */
+
+/** The bundled cut-out and copy — the design's own, and the floor if the studio
+ *  has published no banner or the request fails. */
+const FALLBACK: StoreBanner = {
+  id: "belovi-hero",
+  image: "/images/image 12 (1).png",
+  mobileImage: null,
+  eyebrow: "",
+  title: "BELOVI. WHERE EVERY MOMENT BRINGS CONNECTION.",
+  description: "A space where comfort meets connection and every moment feels special",
+  ctaLabel: "Explore",
+  ctaHref: "/products",
+};
 
 /**
- * Shown until banners load, and kept as the floor if the studio has none
- * published or the request fails — the hero is the whole first screen, so it
- * must never be empty.
+ * Split the headline into words, marking the first and last for the accent.
+ * Word-level rather than line-level so the stagger survives any wrap — a
+ * hardcoded four-line break only holds at one width.
  */
-const HERO_IMAGE = "/images/image.png";
-const HERO_FALLBACK = "/hero-bg.png";
-
-/** Below this, phones get the banner's tall crop. Matches Tailwind's `md`. */
-const MOBILE_BREAKPOINT = "(max-width: 767px)";
-
-/** Auto-advance interval between banners. */
-const SLIDE_MS = 6000;
+function words(title: string): { text: string; accent: boolean }[] {
+  const parts = title.trim().split(/\s+/);
+  return parts.map((text, i) => ({
+    text,
+    accent: i === 0 || i === parts.length - 1,
+  }));
+}
 
 export default function HeroSection() {
-  const ref = useRef<HTMLDivElement>(null);
-  const reduce = useReducedMotion();
-
-  // All ACTIVE banners, newest first. More than one → auto-scrolling carousel.
   const [banners, setBanners] = useState<StoreBanner[]>([]);
   const [index, setIndex] = useState(0);
-  const [resolved, setResolved] = useState(false);
+  const reduce = useReducedMotion();
+  const sectionRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     let cancelled = false;
     fetchActiveBanners()
-      .then((list) => {
-        if (!cancelled) setBanners(list);
-      })
-      .catch((err) => console.error("Failed to load hero banners", err))
-      .finally(() => {
-        // Resolved either way: a failed request still shows the fallback rather
-        // than leaving the first screen empty.
-        if (!cancelled) setResolved(true);
+      .then((list) => { if (!cancelled) setBanners(list); })
+      .catch(() => {
+        // Keeps the bundled hero rather than emptying the first screen.
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
-  // Auto-advance. Paused for a single banner and under reduced-motion (an
-  // auto-moving carousel is exactly what that setting asks us not to do).
   useEffect(() => {
     if (reduce || banners.length <= 1) return;
-    const id = setInterval(() => {
-      setIndex((i) => (i + 1) % banners.length);
-    }, SLIDE_MS);
+    const id = setInterval(() => setIndex((i) => (i + 1) % banners.length), 7000);
     return () => clearInterval(id);
   }, [reduce, banners.length]);
 
-  const current = banners[index] ?? null;
+  // Field-level fallback: a published banner with an empty title is an ordinary
+  // thing to save, and falling back only when there are NO banners would leave
+  // the first screen with a button and nothing else.
+  const published = banners[index];
+  const banner: StoreBanner = {
+    ...FALLBACK,
+    ...published,
+    title: published?.title?.trim() || FALLBACK.title,
+    image: published?.image?.trim() || FALLBACK.image,
+    ctaLabel: published?.ctaLabel?.trim() || FALLBACK.ctaLabel,
+    ctaHref: published?.ctaHref?.trim() || FALLBACK.ctaHref,
+    description: published?.description?.trim() || FALLBACK.description,
+  };
 
-  // Copy comes from the current banner, image failure notwithstanding.
-  const heroEyebrow = current?.eyebrow || "BELOVI · Made for Moments Together";
-  const heroTitle =
-    current?.title ||
-    "Premium luxury wellness & intimacy. Crafted for connection, comfort, and elegance.";
-  const ctaLabel = current?.ctaLabel || "Explore Collections";
-  const ctaHref = current?.ctaHref || "/products";
+  /** The bundled art is a cut-out on transparency; a studio upload is a
+   *  rectangular photograph, which needs its left edge feathered into the black
+   *  or it draws a hard seam through the middle of the hero. */
+  const isCutout = !published?.image?.trim();
 
-  // Layers to paint: real banners, or a single bundled fallback when none.
-  const layers = banners.length > 0 ? banners : [null];
+  // ── Pointer tilt ─────────────────────────────────────────────────────────
+  const px = useMotionValue(0);
+  const py = useMotionValue(0);
+  const spring = { stiffness: 120, damping: 18, mass: 0.6 };
+  const rotateY = useSpring(useTransform(px, [-0.5, 0.5], [-5, 5]), spring);
+  const rotateX = useSpring(useTransform(py, [-0.5, 0.5], [4, -4]), spring);
 
-  // Subtle parallax: the background drifts slower than the scroll.
-  const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end start"] });
-  const y = useTransform(scrollYProgress, [0, 1], ["0%", reduce ? "0%" : "16%"]);
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (reduce) return;
+    const rect = sectionRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    px.set((e.clientX - rect.left) / rect.width - 0.5);
+    py.set((e.clientY - rect.top) / rect.height - 0.5);
+  };
+
+  // ── Scroll parallax ──────────────────────────────────────────────────────
+  // Sculpture travels at half speed; the copy fades as the section leaves.
+  const { scrollYProgress } = useScroll({
+    target: sectionRef,
+    offset: ["start start", "end start"],
+  });
+  const artY = useTransform(scrollYProgress, [0, 1], ["0%", "50%"]);
+  const copyOpacity = useTransform(scrollYProgress, [0, 0.65], [1, 0]);
+
+  const heads = words(banner.title);
+  /** Entrance timings, in ms — the brief's storyboard, kept in one place. */
+  const HEAD_START = 300;
+  const HEAD_STEP = 55;
+  const tailDelay = HEAD_START + heads.length * HEAD_STEP;
 
   return (
     <section
-      ref={ref}
-      className="relative h-[70svh] min-h-[450px] sm:h-[100svh] sm:min-h-[600px] w-full overflow-hidden bg-sand"
+      ref={sectionRef}
+      onPointerMove={onPointerMove}
+      className="hero-grain hero-vignette surface-dark relative isolate flex min-h-[100svh] items-center overflow-hidden bg-black"
     >
-      {/* Background carousel (parallax) — stacked layers crossfade on advance. */}
-      <motion.div style={{ y }} className="absolute inset-0 z-0">
-        {resolved &&
-          layers.map((b, i) => {
-            const active = i === index;
-            const desktop = b ? cldOptimize(b.image, 1920) : HERO_IMAGE;
-            const mobile = b ? cldOptimize(b.mobileImage || b.image, 1080) : HERO_IMAGE;
-            return (
-              <div
-                key={b?.id ?? "fallback"}
-                aria-hidden={!active}
-                className={`absolute inset-0 transition-opacity duration-1000 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-                  active ? "opacity-100" : "opacity-0"
-                }`}
-              >
-                {/*
-                  <picture> so a phone downloads only the tall crop. Only the
-                  first banner is high-priority (it's the LCP); the rest lazy so
-                  they don't compete with it.
-                */}
-                <picture>
-                  <source media={MOBILE_BREAKPOINT} srcSet={mobile} />
-                  <img
-                    src={desktop}
-                    alt={b?.title || "BELOVI — premium luxury wellness"}
-                    fetchPriority={i === 0 ? "high" : "auto"}
-                    loading={i === 0 ? "eager" : "lazy"}
-                    onError={(e) => {
-                      // Dead banner URL → bundled photo, once.
-                      if (!e.currentTarget.src.endsWith(HERO_FALLBACK)) {
-                        e.currentTarget.src = HERO_FALLBACK;
-                      }
-                    }}
-                    className="h-[116%] w-full object-cover object-center"
-                  />
-                </picture>
-              </div>
-            );
-          })}
-      </motion.div>
-
-      {/* Legibility scrim (darkens the left where the text sits) */}
-      <div className="absolute inset-0 z-0 bg-gradient-to-r from-black/60 via-black/20 to-transparent" />
-
-      {/* Text — re-keyed per slide so the copy transitions with the image. */}
-      <div className="relative z-10 h-full max-w-[1500px] mx-auto px-6 sm:px-10 lg:px-16 flex items-end pb-20 sm:items-center sm:pb-0">
+      <div className="section-x section-inner relative z-10 flex w-full flex-col justify-center gap-10 pb-20 pt-[124px] lg:gap-6 lg:pb-[72px] lg:pt-[150px]">
+        {/* Copy */}
         <motion.div
-          key={index}
-          initial={{ opacity: 0, y: reduce ? 0 : 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, ease }}
-          className="max-w-2xl"
+          style={reduce ? undefined : { opacity: copyOpacity }}
+          /* A cut-out is transparent, so the headline can run over it exactly as
+             the design intends. A studio photograph is an opaque rectangle, and
+             the same overlap puts white type on a light interior shot — so the
+             copy yields instead. One flag, two compositions. */
+          /* The cap widens at xl because the type stops growing before the page
+             does: `display-hero` clamps at 94px while the content column stops
+             at the 1508px inner max, so a fixed percentage that gives three
+             lines at 1440 drops to four on a 1920 screen. */
+          className={`relative z-20 max-w-[880px] ${
+            isCutout ? "lg:max-w-[82%] xl:max-w-[94%]" : "lg:max-w-[50%]"
+          }`}
         >
-          <p className="eyebrow mb-6 text-ivory/85">{heroEyebrow}</p>
-          <h1 className="font-display font-light leading-[1.06] text-[clamp(2.4rem,6vw,4.6rem)] text-ivory">
-            {heroTitle}
+          <h1 className="display-hero display-hero-thin text-white">
+            {heads.map((w, i) => (
+              <span
+                key={`${w.text}-${i}`}
+                // inline-block so the transform applies; the trailing space is
+                // its own node, otherwise words run together when they wrap.
+                className="inline-block animate-[heroRise_0.9s_cubic-bezier(0.16,1,0.3,1)_both]"
+                style={{ animationDelay: `${HEAD_START + i * HEAD_STEP}ms` }}
+              >
+                <span className={w.accent ? "text-brand" : undefined}>{w.text}</span>
+                {i < heads.length - 1 ? " " : ""}
+              </span>
+            ))}
           </h1>
-          <div className="mt-10">
-            <ButtonLink href={ctaHref} variant="solid-ivory">
-              {ctaLabel}
-            </ButtonLink>
+
+          <p
+            className="mt-7 max-w-[42ch] animate-[heroBlurIn_0.8s_ease-out_both] text-body text-muted sm:mt-9"
+            style={{ animationDelay: `${tailDelay}ms` }}
+          >
+            {banner.description}
+          </p>
+
+          <div
+            className="mt-8 animate-[heroPop_0.7s_cubic-bezier(0.34,1.56,0.64,1)_both] sm:mt-10"
+            style={{ animationDelay: `${tailDelay + 180}ms` }}
+          >
+            <MagneticCta href={banner.ctaHref} label={banner.ctaLabel} disabled={!!reduce} />
           </div>
+        </motion.div>
+
+        {/* Sculpture. `perspective` on the wrapper so the entrance's rotateY and
+            the pointer tilt both read as depth rather than a flat skew. */}
+        <motion.div
+          style={{
+            perspective: 1000,
+            ...(reduce ? {} : { y: artY }),
+          }}
+          /* Sat slightly low of centre by request. Below `lg` the art is in
+             flow, so the drop is a margin; from `lg` it is absolute, so the drop
+             is `top` — NOT the translate, which framer already owns for the
+             scroll parallax and would overwrite. */
+          className={`pointer-events-none relative z-0 -mx-[6vw] mt-6 aspect-[1031/682] sm:mt-8 lg:absolute lg:top-[53%] lg:mx-0 lg:mt-0 lg:-translate-y-1/2 ${
+            isCutout ? "lg:right-[-5%] lg:w-[58%]" : "lg:right-[-4%] lg:w-[50%]"
+          }`}
+        >
+          <motion.div
+            style={reduce ? undefined : { rotateX, rotateY, transformStyle: "preserve-3d" }}
+            className="h-full w-full animate-[heroSculpture_1.1s_cubic-bezier(0.16,1,0.3,1)_400ms_both]"
+          >
+            <div className={`h-full w-full ${reduce ? "" : "hero-float"}`}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={isCutout ? banner.image : cldOptimize(banner.image, 1600)}
+                alt={banner.title}
+                fetchPriority="high"
+                className={`h-full w-full object-contain drop-shadow-[0_40px_80px_rgba(0,0,0,0.65)] ${
+                  isCutout ? "" : "hero-media rounded-[28px] object-cover"
+                }`}
+              />
+            </div>
+          </motion.div>
         </motion.div>
       </div>
 
-      {/* Slide indicators — only with more than one banner. */}
+      {/* Slide indicators — only meaningful with more than one banner. */}
       {banners.length > 1 && (
-        <div className="absolute z-10 bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2.5">
+        <div className="section-x absolute bottom-8 left-0 z-20 flex gap-2">
           {banners.map((b, i) => (
             <button
               key={b.id}
@@ -155,7 +224,7 @@ export default function HeroSection() {
               aria-label={`Show banner ${i + 1}`}
               aria-current={i === index}
               className={`h-1.5 rounded-full transition-all duration-500 ${
-                i === index ? "w-6 bg-ivory" : "w-1.5 bg-ivory/50 hover:bg-ivory/80"
+                i === index ? "w-10 bg-brand" : "w-4 bg-white/25 hover:bg-white/50"
               }`}
             />
           ))}

@@ -118,7 +118,7 @@ function GoogleButtonUI({
   return (
     <div className="w-full">
       {error && (
-        <div className="mb-4 border border-[#d8c3ba] bg-[#f4e9e3] text-[#8a3a2e] px-4 py-3 text-[13px] font-sans text-center">
+        <div className="mb-4 border border-line bg-cream text-ink px-4 py-3 text-[13px] font-sans text-center">
           {error}
         </div>
       )}

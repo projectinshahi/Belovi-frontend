@@ -6,11 +6,11 @@ import type { Moment } from "../../lib/moment";
 
 /* Bespoke dark palette for this section (per spec) */
 const C = {
-  bg: "#1C1814",
-  primary: "#F5F0E8",
-  secondary: "#C4B8A8",
-  body: "#E8E0D4",
-  btnHover: "#E8E0D4",
+  bg: "#1A1A1A",
+  primary: "#F5F5F5",
+  secondary: "#9E9E9E",
+  body: "#E0E0E0",
+  btnHover: "#E0E0E0",
 };
 
 const ease = [0.16, 1, 0.3, 1] as const;
@@ -50,15 +50,11 @@ export default function TheMoment({ moment }: { moment?: Moment | null }) {
     show: { opacity: 1, y: 0, transition: { duration: 0.65, ease } },
   };
 
-  // Smooth-scroll to the Edit section when already on the home page.
-  const previewEdit = (e: React.MouseEvent) => {
-    const el = typeof document !== "undefined" && document.getElementById("the-edit");
-    if (el) {
-      e.preventDefault();
-      el.scrollIntoView({ behavior: reduce ? "auto" : "smooth" });
-      history.replaceState(null, "", "/#the-edit");
-    }
-  };
+  /* The smooth-scroll handler that used to live here looked for `#the-edit` on
+     the current page. No element carries that id anywhere in the app, so it
+     never fired and the link fell through to `/#the-edit` — the home page, at
+     the top, with a fragment pointing at nothing. The Edit has its own route;
+     the link goes there. */
 
   return (
     <section
@@ -131,8 +127,7 @@ export default function TheMoment({ moment }: { moment?: Moment | null }) {
           </Link>
 
           <Link
-            href="/#the-edit"
-            onClick={previewEdit}
+            href="/the-edit"
             className="group w-full sm:w-auto text-center font-sans uppercase tracking-[0.16em] text-[12px] px-8 py-4 rounded-[2px] border transition-colors duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
             style={
               {

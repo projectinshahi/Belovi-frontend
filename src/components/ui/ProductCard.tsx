@@ -1,123 +1,191 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Star } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { cldOptimize } from "../../lib/image";
+import { useCart } from "../../context/CartContext";
+import { isSignedIn, signInHref } from "../../lib/auth";
 import {
   type Product,
   fromPrice,
   fromOldPrice,
   productImagePool,
-  garmentLabel,
   formatINR,
   productTags,
 } from "../../lib/product";
 
 /**
- * A piece, as a card.
+ * A piece, as a card — the Categories grid card, reused by the shop and
+ * collection grids so the catalogue reads as one system.
  *
- * The frame is a filled, rounded panel: photograph on top, details in a padded
- * block beneath, badges pinned to the image's top-left corner.
+ * STRUCTURE. The card is a plain element, not an anchor: it holds a real
+ * <button> (add to bag), and a button inside an anchor is invalid HTML that
+ * browsers resolve unpredictably. Instead the title carries the link and
+ * stretches over the whole card via `after:absolute after:inset-0`, so the card
+ * is entirely clickable while the cart button — raised on z-10 — stays its own
+ * control.
  *
- * `surface-light` is what lets one component serve both grids. The Featured
- * band is `bg-black` (`surface-dark`), which re-points `ink`/`muted` to their
- * light values for everything inside it — on a cream card that would be white
- * on white. Declaring `surface-light` restores the page scale for the card's
- * own subtree, so the card reads identically on the ivory shop grid and on the
- * black band without being told which one it is on.
+ * `surface-light` restores the page's type scale for the card's own subtree, so
+ * one component reads correctly on the black Categories band and on the ivory
+ * shop grid without being told which it is on.
  */
 export default function ProductCard({
   product,
   className = "",
-  imageRatio = "aspect-[3/4]",
+  imageRatio = "aspect-square",
+  href,
+  imageOverride,
 }: {
   product: Product;
   className?: string;
   imageRatio?: string;
+  /**
+   * Replaces the piece's own photography on this card.
+   *
+   * The collection grid passes one of the design's product shots. It WINS over
+   * the studio's upload rather than merely filling a gap — see COLLECTION_IMAGES
+   * in lib/product.ts for why, and for the one line that undoes it. Omit it and
+   * the card behaves exactly as it always has.
+   */
+  imageOverride?: string;
+  /**
+   * Overrides the detail-page link. Used by the homepage showcase cards, which
+   * are art direction rather than catalogue rows and so have no detail page of
+   * their own — they lead to the shop instead. Quick-add is disabled with it,
+   * because there is no real piece behind the card to add.
+   */
+  href?: string;
 }) {
-  const pool = productImagePool(product);
+  const router = useRouter();
+  const { addToCart } = useCart();
+  const reduce = useReducedMotion();
+
+  const [failed, setFailed] = useState<string[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [justAdded, setJustAdded] = useState(false);
+
+  const own = productImagePool(product).filter((s) => !failed.includes(s));
+  /* An override replaces the pool outright rather than heading it, so the
+     hover cross-fade doesn't reveal the photograph it was meant to replace. */
+  const pool = imageOverride ? [imageOverride] : own;
   const price = fromPrice(product);
   const oldPrice = fromOldPrice(product);
-  const garment = garmentLabel(product);
   const tags = productTags(product);
+  const primary = pool[0];
+  const secondary = pool[1];
 
-  // Derived from the two prices the piece already carries — not new content.
-  const discount =
-    oldPrice && price > 0 ? Math.round((1 - price / oldPrice) * 100) : 0;
+  /**
+   * Ratings render only when the piece actually carries one. Five hollow stars
+   * and a "0" on every new product reads as a broken widget rather than as "not
+   * yet reviewed", and inventing a number would put a fake rating in front of a
+   * customer.
+   */
+  const rating = product.starRating ?? 0;
+  const hasRating = rating > 0;
 
-  // Only shown once a piece has actually been reviewed: five empty stars and a
-  // "(0)" on every new piece reads as a broken widget, not as "no reviews yet".
-  const reviews = product.reviewsCount ?? 0;
-  const rating = Math.round(product.starRating ?? 0);
+  const variants = product.variants || [];
 
-  // Walk the pool rather than trusting its first entry.
-  //
-  // A dead URL used to cost the card its photograph entirely: the studio's free
-  // -text URL field lets a non-image (or a URL that simply 404s) sit at index 0,
-  // ahead of every real upload, so a piece with four good photographs still
-  // rendered the placeholder. Each failure now advances to the next candidate;
-  // only a pool where everything fails falls back to the placeholder.
-  const [failed, setFailed] = useState<string[]>([]);
-  const live = pool.filter((src: string) => !failed.includes(src));
-  const markFailed = (src: string) =>
-    setFailed((prev) => (prev.includes(src) ? prev : [...prev, src]));
+  /**
+   * Quick-add, but only when the piece has exactly one variant.
+   *
+   * With several, there is no way to know which size or colourway the customer
+   * wants, and silently taking the first is how somebody receives the wrong one.
+   * Those go to the detail page to choose — the same place the "Add to Cart"
+   * there already lives. Sign-in is required either way, matching the detail
+   * page rather than inventing a second rule for the same action.
+   */
+  const target = href ?? `/products/${product._id}`;
+  const canQuickAdd = !href && variants.length === 1 && price > 0;
 
-  const primary = live[0];
-  const secondary = live[1];
-  const hasPrimary = !!primary;
-  const hasSecondary = !!secondary;
+  const handleCartClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (adding) return;
+
+    if (!canQuickAdd) {
+      router.push(target);
+      return;
+    }
+    if (!isSignedIn()) {
+      router.push(signInHref(target));
+      return;
+    }
+
+    setAdding(true);
+    try {
+      await addToCart({
+        id: product._id,
+        name: product.name,
+        image: primary ?? "",
+        price,
+        currency: "₹",
+        size: variants[0]?.size,
+        color: variants[0]?.color,
+        quantity: 1,
+      });
+      setJustAdded(true);
+      setTimeout(() => setJustAdded(false), 1400);
+    } catch {
+      // The bag is the source of truth and it rejected the line; the detail page
+      // gives the customer somewhere to retry with full context.
+      router.push(target);
+    } finally {
+      setAdding(false);
+    }
+  };
 
   return (
-    <Link
-      href={`/products/${product._id}`}
-      className={`surface-light group flex h-full flex-col overflow-hidden rounded-2xl bg-cream transition-shadow duration-300 hover:shadow-[0_8px_28px_rgba(0,0,0,0.10)] ${className}`}
+    <div
+      className={`surface-light group relative flex h-full flex-col rounded-[20px] bg-cream p-3
+        transition-[transform,box-shadow] duration-[350ms] ease-[cubic-bezier(0.25,0.46,0.45,0.94)]
+        hover:-translate-y-2 hover:shadow-[0_20px_48px_rgba(0,0,0,0.18)] sm:rounded-[24px] sm:p-4 ${className}`}
     >
-      <div className={`relative overflow-hidden bg-sand ${imageRatio}`}>
-        {hasPrimary ? (
+      {/* Image area. Figma insets the photograph inside the card rather than
+          bleeding it to the edge — the white margin is what makes the piece read
+          as mounted rather than cropped, and it is the single biggest difference
+          between this card and the one it replaces. */}
+      <div className={`relative overflow-hidden rounded-[12px] bg-ivory sm:rounded-[16px] ${imageRatio}`}>
+        {primary ? (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={cldOptimize(primary!, 800)}
+              src={cldOptimize(primary, 800)}
               alt={product.name}
               loading="lazy"
-              onError={() => markFailed(primary!)}
-              className={`absolute inset-0 h-full w-full object-cover transition-all duration-[800ms] ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-[1.03] ${
-                hasSecondary ? "group-hover:opacity-0" : ""
-              }`}
+              onError={() => setFailed((p) => [...p, primary])}
+              className={`absolute inset-0 h-full w-full object-cover transition-transform
+                duration-[700ms] ease-[cubic-bezier(0.25,0.46,0.45,0.94)] group-hover:scale-105
+                ${secondary ? "group-hover:opacity-0" : ""}`}
             />
-            {hasSecondary && (
+            {secondary && (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={cldOptimize(secondary!, 800)}
+                src={cldOptimize(secondary, 800)}
                 alt=""
                 aria-hidden
                 loading="lazy"
-                onError={() => markFailed(secondary!)}
-                className="absolute inset-0 h-full w-full object-cover opacity-0 transition-opacity duration-[800ms] ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:opacity-100"
+                onError={() => setFailed((p) => [...p, secondary])}
+                className="absolute inset-0 h-full w-full object-cover opacity-0 transition-opacity duration-[700ms] group-hover:opacity-100"
               />
             )}
           </>
         ) : (
-          <div className="img-placeholder absolute inset-0 flex items-center justify-center">
-            <span className="font-display uppercase tracking-[0.35em] text-xs text-ink/25 pl-[0.35em]">
+          <div className="img-placeholder absolute inset-0 grid place-items-center">
+            <span className="font-display text-xs uppercase tracking-[0.35em] text-ink/25 pl-[0.35em]">
               BELOVI
             </span>
           </div>
         )}
 
-        {(discount > 0 || tags.length > 0) && (
-          <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
-            {discount > 0 && (
-              <span className="rounded-full bg-forest px-2.5 py-1.5 font-sans text-[10px] uppercase leading-none tracking-[0.08em] text-ivory">
-                −{discount}%
-              </span>
-            )}
+        {tags.length > 0 && (
+          <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">
             {tags.map((t, i) => (
               <span
                 key={i}
-                className={`rounded-full px-2.5 py-1.5 font-sans text-[10px] uppercase leading-none tracking-[0.08em] ${
-                  t.limited ? "bg-[#8B7355] text-ivory" : "bg-ink text-cream"
+                className={`rounded-full px-2.5 py-1 font-sans text-[11px] leading-tight ${
+                  t.limited ? "bg-ink text-white" : "bg-brand text-white"
                 }`}
               >
                 {t.label}
@@ -127,49 +195,88 @@ export default function ProductCard({
         )}
       </div>
 
-      {/* Sized for a six-up row: at a 1500px container six cards are ~205px
-          wide, so the details block runs a compact scale. `flex-1` keeps every
-          card in a row ending at the same height when one name wraps to two
-          lines and its neighbour does not. */}
-      <div className="flex flex-1 flex-col p-3 sm:p-4">
-        {/* bronze-deep, not bronze: the rose-gold detail tone is 3.6:1 on cream,
-            below AA at this size. */}
-        <h3 className="font-display text-[14px] sm:text-[15px] leading-snug text-ink transition-colors group-hover:text-bronze-deep">
-          {product.name}
-        </h3>
-        {garment && (
-          <p className="mt-0.5 font-sans text-[11px] text-muted truncate">{garment}</p>
-        )}
+      {/* Floating cart control, straddling the foot of the image tile. Figma
+          overlaps it by 28px on a 518px card; `-mt-7` is that at this scale. No
+          white ring — the card's own inset margin already separates it from the
+          photograph, so the ring was doing a job that no longer exists. */}
+      <div className="relative z-10 -mt-6 flex justify-center sm:-mt-7">
+        <motion.button
+          type="button"
+          onClick={handleCartClick}
+          whileTap={reduce ? undefined : { scale: 0.9 }}
+          aria-label={
+            canQuickAdd
+              ? `Add ${product.name} to cart`
+              : `Choose options for ${product.name}`
+          }
+          className="relative grid h-12 w-12 place-items-center rounded-full bg-ink text-white
+            shadow-[0_6px_20px_rgba(0,0,0,0.28)]
+            transition-[background-color,transform,box-shadow] duration-[250ms] ease-out
+            hover:scale-110 hover:bg-brand hover:shadow-[0_8px_24px_rgba(211,47,47,0.45)] sm:h-[52px] sm:w-[52px]"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-5 w-5"
+          >
+            <circle cx="9" cy="20" r="1.3" />
+            <circle cx="18" cy="20" r="1.3" />
+            <path d="M2 3h2.6l2.2 11.2a1.6 1.6 0 0 0 1.6 1.3h8.5a1.6 1.6 0 0 0 1.6-1.3L21 7H5.2" />
+          </svg>
 
-        <p className="mt-1.5 flex items-baseline gap-1.5 font-sans text-[14px] font-medium text-ink">
-          {price > 0 ? formatINR(price) : "Enquire"}
-          {oldPrice && (
-            <span className="text-[12px] font-normal text-muted line-through">
-              {formatINR(oldPrice)}
-            </span>
-          )}
-        </p>
-
-        {reviews > 0 && (
-          <div className="mt-1.5 flex items-center gap-1">
-            <span className="flex items-center gap-px" aria-hidden>
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Star
-                  key={i}
-                  size={11}
-                  className={
-                    i < rating ? "fill-bronze text-bronze" : "fill-none text-line-strong"
-                  }
-                />
-              ))}
-            </span>
-            <span className="font-sans text-[11px] text-muted">
-              ({reviews})
-              <span className="sr-only"> — rated {rating} out of 5</span>
-            </span>
-          </div>
-        )}
+          {/* Confirmation, floating up and away. */}
+          <AnimatePresence>
+            {justAdded && (
+              <motion.span
+                initial={{ opacity: 0, y: 0, scale: 0.8 }}
+                animate={{ opacity: 1, y: -26, scale: 1 }}
+                exit={{ opacity: 0, y: -40 }}
+                transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                className="pointer-events-none absolute font-sans text-[13px] font-semibold text-brand"
+              >
+                +1
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </motion.button>
       </div>
-    </Link>
+
+      <div className="flex flex-1 flex-col px-1 pb-1 pt-3.5">
+        {/* The stretched link: covers the card without wrapping the button. */}
+        <h3 className="min-h-[48px] font-sans text-[16px] font-medium leading-[1.35] text-muted transition-colors duration-300 group-hover:text-ink sm:text-[19px] lg:text-[22px]">
+          <Link href={target} className="after:absolute after:inset-0">
+            {product.name}
+          </Link>
+        </h3>
+
+        <div className="mt-3.5 flex items-center justify-between gap-3">
+          <span className="font-sans text-[18px] font-medium text-ink sm:text-[21px] lg:text-[24px]">
+            {price > 0 ? formatINR(price) : "Enquire"}
+          </span>
+
+          {hasRating ? (
+            <span
+              className="flex items-center gap-1.5"
+              aria-label={`Rated ${rating} out of 5 stars`}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden className="h-4 w-4 fill-star text-star">
+                <path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.9L12 17.8 5.8 21.1 7 14.2l-5-4.9 6.9-1z" />
+              </svg>
+              <span className="font-sans text-[14px] text-faint">{rating}</span>
+            </span>
+          ) : (
+            oldPrice && (
+              <span className="font-sans text-[14px] text-faint line-through">
+                {formatINR(oldPrice)}
+              </span>
+            )
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

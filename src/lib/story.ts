@@ -74,19 +74,22 @@ export async function fetchStory(opts?: { noStore?: boolean }): Promise<StoryPay
  * Render admin-entered body copy as React nodes. Paragraphs split on blank
  * lines; inside a paragraph `**bold**` and `*italic*` are honoured and single
  * newlines become line breaks. No raw HTML is injected, so admin input is safe.
+ *
+ * `className` overrides the paragraph styling for pages that set body copy at a
+ * different scale — About runs it at the design's 24px lead size. It defaults to
+ * the original value, so every existing caller is unaffected.
  */
-export function renderRichText(body?: string): React.ReactNode[] {
+export function renderRichText(
+  body?: string,
+  className = "font-sans text-[15px] leading-[1.85] text-muted"
+): React.ReactNode[] {
   if (!body) return [];
   const paragraphs = body.replace(/\r\n/g, "\n").split(/\n{2,}/);
   return paragraphs
     .map((p) => p.trim())
     .filter(Boolean)
     .map((para, pi) =>
-      React.createElement(
-        "p",
-        { key: pi, className: "font-sans text-[15px] leading-[1.85] text-muted" },
-        renderInline(para)
-      )
+      React.createElement("p", { key: pi, className }, renderInline(para))
     );
 }
 

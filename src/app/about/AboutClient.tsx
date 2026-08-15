@@ -1,269 +1,129 @@
 "use client";
 
-import Breadcrumbs from "../../components/common/Breadcrumbs";
-import StorySectionView from "../../components/story/StorySectionView";
-import EditorialImage from "../../components/ui/EditorialImage";
-import Reveal from "../../components/ui/Reveal";
-import { ButtonLink } from "../../components/ui/Button";
-import { renderRichText, type StorySection } from "../../lib/story";
+import AboutHero from "../../components/about/AboutHero";
+import AboutBlock from "../../components/about/AboutBlock";
 import type { AboutPage } from "../../lib/about";
 
 /**
- * About Us — company profile, vision, story, showroom.
+ * About Us — rebuilt to the Figma frame (node 58:1313).
  *
- * Every block renders only when it has content, so the page shortens rather
- * than showing a heading over nothing while the studio fills it in. Nothing
- * here is authored in code: the copy and photography come from the About
- * singleton (Studio → About Page), and any published StorySection records
- * render between vision and showroom.
+ * A black page lit by four red glows, a photographic banner, then four rows of
+ * copy opposite a framed photograph, alternating sides. That is the whole page:
+ * there is no CTA, no eyebrow, no map and no vision-point grid, because the
+ * design has none.
+ *
+ * ── WHERE THE CONTENT COMES FROM ──────────────────────────────────────────
+ * EVERYTHING is the studio's: the banner's heading, subheading and photograph,
+ * and each block's heading, description and photograph, all from the About
+ * singleton (Studio → About Page).
+ *
+ * The constants below are the FLOOR, not the content. Every lookup is
+ * `about.x?.trim() || <the design's own>`, so a field the studio has not filled
+ * — or an unreachable API — renders the page exactly as it shipped rather than
+ * as a gap. `?.trim()` and not `??`: a field cleared to whitespace in the admin
+ * means "put the original back", which is the only sane reading of an empty box.
+ *
+ * So this page cannot be empty and cannot fail: with the API down it renders
+ * complete, on bundled copy and bundled photography. That is why there is no
+ * empty state and no error state here — there is no condition either could
+ * describe. `loading.tsx` remains, because the fetch is still awaited.
  */
+
+const BANNER = {
+  title: "About Belovi",
+  tagline: "Where every seat brings people closer.",
+};
 
 /**
- * The map is only drawn for something that can actually load in an iframe.
+ * The four rows, in order. `image` is the design's own photograph — the floor
+ * under the studio's upload, not a replacement for it. Spaces in the paths are
+ * percent-encoded so the src needs no browser fixup.
  *
- * `showroomMapUrl` is a free-text field, so it collects things like the word
- * "google map" or a share link rather than an embed URL. Feeding that to an
- * iframe renders a broken frame the size of the map, which looks far worse than
- * omitting it — so anything that isn't an http(s) URL is treated as not set.
+ * A blank line inside `body` is a paragraph break (the showroom's closing line
+ * is its own paragraph, as Figma sets it).
  */
-function embeddableMapUrl(raw?: string): string | null {
-  const s = (raw || "").trim();
-  return /^https?:\/\/.+/i.test(s) ? s : null;
-}
+const BLOCKS = [
+  {
+    key: "profile" as const,
+    /** The admin fields this block reads, in `<key>Title` / `<key>Body` form. */
+    titleField: "profileTitle" as const,
+    bodyField: "profileBody" as const,
+    title: "About Us",
+    body: "Belovi is a luxury furniture brand built around the belief that furniture should do more than fill a space — it should create an experience. We bring together distinctive forms, refined materials, exceptional comfort, and thoughtful craftsmanship to create pieces that become part of the spaces and moments people love.",
+    image: "/images/image%2020.png",
+  },
+  {
+    key: "story" as const,
+    titleField: "storyTitle" as const,
+    bodyField: "storyBody" as const,
+    title: "Our Story",
+    body: "Belovi began with a simple idea: beautiful spaces are built around meaningful moments. What started with a passion for distinctive furniture has grown into a collection of carefully selected pieces that balance artistic form with everyday comfort. Today, we continue to explore designs that bring people together and make spaces feel truly personal.",
+    image: "/images/image%2022.png",
+  },
+  {
+    key: "vision" as const,
+    titleField: "visionTitle" as const,
+    bodyField: "visionBody" as const,
+    title: "Our Vision",
+    body: "We believe furniture should be more than something you place in a room — it should shape how you experience it. Our vision is to create spaces that inspire comfort, connection, and individuality through exceptional design.",
+    image: "/images/image%2024.png",
+  },
+  {
+    key: "showroom" as const,
+    titleField: "showroomTitle" as const,
+    bodyField: "showroomBody" as const,
+    title: "Visit Our Showroom",
+    body: "Experience the Belovi collection beyond the screen. Step into our showroom to discover the textures, forms, materials, and comfort of our furniture in person. Our team is here to help you find pieces that perfectly complement your space and lifestyle.\n\nBelovi — Where every seat brings people closer.",
+    image: "/images/image%2025.png",
+  },
+];
 
-export default function AboutClient({
-  about,
-  story,
-}: {
-  about: AboutPage | null;
-  story: StorySection[];
-}) {
-  const a = about ?? {};
+const BANNER_IMAGE = "/images/Rectangle%208%20(1).png";
 
-  const hasProfile = Boolean(a.profileTitle || a.profileBody || a.profileImage);
-  const points = (a.visionPoints || []).filter((p) => p.label || p.text);
-  const hasVision = Boolean(a.visionTitle || a.visionBody || points.length);
-  const showroomImages = (a.showroomImages || []).filter(Boolean);
-  const mapUrl = embeddableMapUrl(a.showroomMapUrl);
-  const hasShowroom = Boolean(
-    a.showroomTitle ||
-      a.showroomBody ||
-      a.showroomAddress ||
-      a.showroomHours ||
-      mapUrl ||
-      showroomImages.length
-  );
+export default function AboutClient({ about }: { about: AboutPage | null }) {
+  /* `about` is null when the studio is unreachable. Nothing branches on it —
+     every lookup below simply finds nothing and takes the bundled value, so an
+     outage costs the page its custom content and not the page. */
+  const studioImage: Record<string, string | undefined> = {
+    profile: about?.profileImage,
+    story: about?.storyImage,
+    vision: about?.visionImage,
+    // The design uses one photograph here; the rest of the studio's showroom
+    // set has no place on this page.
+    showroom: (about?.showroomImages || []).filter(Boolean)[0],
+  };
+
+  /** The studio's word for this field, or the design's own. */
+  const copy = (field: keyof AboutPage, fallback: string) =>
+    (about?.[field] as string | undefined)?.trim() || fallback;
 
   return (
-    <main className="bg-ivory flex-1">
-      {/* ── Intro ─────────────────────────────────────────────────────────── */}
-      <div className="pt-[92px] lg:pt-[116px]">
-        <div className="max-w-[1500px] mx-auto px-6 sm:px-10 lg:px-16">
-          <Breadcrumbs />
-        </div>
-        <div className="max-w-3xl mx-auto px-6 text-center pt-5 sm:pt-8 pb-4 sm:pb-6">
-          {a.introEyebrow && (
-            <p className="eyebrow text-bronze-deep">{a.introEyebrow}</p>
-          )}
-          {a.introTitle && (
-            <h1 className="font-display font-light leading-[1.1] text-[clamp(1.9rem,4.5vw,3.1rem)] text-ink mt-4">
-              {a.introTitle}
-            </h1>
-          )}
-          {a.introBody && (
-            <div className="mt-5 space-y-4 max-w-xl mx-auto">
-              {renderRichText(a.introBody)}
-            </div>
-          )}
-        </div>
+    <main className="surface-dark glow-field flex-1 bg-onyx">
+      <AboutHero
+        title={copy("introTitle", BANNER.title)}
+        tagline={copy("introBody", BANNER.tagline)}
+        image={about?.introImage || BANNER_IMAGE}
+      />
 
-        {a.introImage && (
-          <div className="max-w-[1500px] mx-auto px-6 sm:px-10 lg:px-16 pt-6 sm:pt-8">
-            <Reveal>
-              <EditorialImage
-                src={a.introImage}
-                alt={a.introTitle || "BELOVI"}
-                ratio="aspect-[16/9]"
-                className="rounded-2xl"
-                priority
-              />
-            </Reveal>
-          </div>
-        )}
+      {/* Figma stacks the four rows almost flush (10px apart) inside a block
+          padded 72px — the breathing room is the height of the photographs
+          themselves, with the copy centred against them. Stacked on a phone
+          that collapses to nothing, so the gap opens up below `lg`. */}
+      <div className="section-pad space-y-16 sm:space-y-20 lg:space-y-[10px]">
+        {BLOCKS.map((b, i) => (
+          <AboutBlock
+            key={b.key}
+            title={copy(b.titleField, b.title)}
+            body={copy(b.bodyField, b.body)}
+            image={studioImage[b.key] || b.image}
+            /* Alternating sides, per the design: copy left, copy right, repeat. */
+            imageLeft={i % 2 === 1}
+            /* The first row's photograph is often just below the fold on a
+               laptop — worth fetching eagerly; the rest stay lazy. */
+            priority={i === 0}
+          />
+        ))}
       </div>
-
-      {/* ── Company profile ───────────────────────────────────────────────── */}
-      {hasProfile && (
-        <section className="bg-ivory">
-          <div className="max-w-[1500px] mx-auto px-6 sm:px-10 lg:px-16 py-12 sm:py-16 lg:py-24">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 sm:gap-10 lg:gap-20 items-center">
-              <Reveal className="order-2 lg:order-1 lg:pr-8 xl:pr-12">
-                {a.profileEyebrow && (
-                  <p className="eyebrow text-bronze-deep mb-4">{a.profileEyebrow}</p>
-                )}
-                {a.profileTitle && (
-                  <h2 className="font-display font-light leading-[1.12] text-[clamp(1.75rem,3.4vw,2.5rem)] text-ink mb-5">
-                    {a.profileTitle}
-                  </h2>
-                )}
-                {a.profileBody && (
-                  <div className="space-y-4 max-w-[460px]">
-                    {renderRichText(a.profileBody)}
-                  </div>
-                )}
-              </Reveal>
-              <Reveal delay={0.1} className="order-1 lg:order-2 group">
-                <EditorialImage
-                  src={a.profileImage}
-                  alt={a.profileTitle || "BELOVI"}
-                  placeholderLabel={a.profileEyebrow || "BELOVI"}
-                  ratio="aspect-[1/1]"
-                  className="rounded-2xl"
-                />
-              </Reveal>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* ── Vision ────────────────────────────────────────────────────────── */}
-      {hasVision && (
-        <section className="bg-tan">
-          <div className="max-w-[1200px] mx-auto px-6 sm:px-10 lg:px-16 section-pad">
-            <Reveal className="max-w-2xl">
-              {a.visionEyebrow && (
-                <p className="eyebrow text-bronze-deep mb-4">{a.visionEyebrow}</p>
-              )}
-              {a.visionTitle && (
-                <h2 className="font-display font-light leading-[1.12] text-[clamp(1.75rem,3.4vw,2.5rem)] text-ink">
-                  {a.visionTitle}
-                </h2>
-              )}
-              {a.visionBody && (
-                <div className="space-y-4 mt-5">{renderRichText(a.visionBody)}</div>
-              )}
-            </Reveal>
-
-            {points.length > 0 && (
-              <div className="mt-12 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8 lg:gap-12">
-                {points.map((p, i) => (
-                  <Reveal key={`${p.label}-${i}`} delay={(i % 3) * 0.08}>
-                    {p.label && (
-                      <p className="font-display font-light text-[22px] leading-snug text-ink capitalize">
-                        {p.label}
-                      </p>
-                    )}
-                    {p.text && (
-                      <p className="font-sans text-[14px] leading-[1.8] text-muted mt-3">
-                        {p.text}
-                      </p>
-                    )}
-                  </Reveal>
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
-      )}
-
-      {/* ── Story ─────────────────────────────────────────────────────────────
-          Published StorySection records, if any. No fallback copy: an empty
-          feed simply contributes nothing rather than inventing editorial. */}
-      {story.map((s) => (
-        <StorySectionView key={s._id} section={s} />
-      ))}
-
-      {/* ── Showroom ──────────────────────────────────────────────────────── */}
-      {hasShowroom && (
-        <section id="showroom" className="bg-ivory scroll-mt-24">
-          <div className="max-w-[1500px] mx-auto px-6 sm:px-10 lg:px-16 section-pad border-t border-line">
-            <Reveal className="max-w-2xl">
-              {a.showroomEyebrow && (
-                <p className="eyebrow text-bronze-deep mb-4">{a.showroomEyebrow}</p>
-              )}
-              {a.showroomTitle && (
-                <h2 className="font-display font-light leading-[1.12] text-[clamp(1.75rem,3.4vw,2.5rem)] text-ink">
-                  {a.showroomTitle}
-                </h2>
-              )}
-              {a.showroomBody && (
-                <div className="space-y-4 mt-5">{renderRichText(a.showroomBody)}</div>
-              )}
-            </Reveal>
-
-            {(a.showroomAddress || a.showroomHours) && (
-              <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 gap-8 max-w-2xl">
-                {a.showroomAddress && (
-                  <Reveal>
-                    <p className="eyebrow text-faint mb-2">Address</p>
-                    <p className="font-sans text-[15px] leading-[1.8] text-ink whitespace-pre-line">
-                      {a.showroomAddress}
-                    </p>
-                  </Reveal>
-                )}
-                {a.showroomHours && (
-                  <Reveal delay={0.08}>
-                    <p className="eyebrow text-faint mb-2">Visiting Hours</p>
-                    <p className="font-sans text-[15px] leading-[1.8] text-ink whitespace-pre-line">
-                      {a.showroomHours}
-                    </p>
-                  </Reveal>
-                )}
-              </div>
-            )}
-
-            {showroomImages.length > 0 && (
-              <div className="mt-12 grid grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-                {showroomImages.map((img, i) => (
-                  <Reveal key={img} delay={(i % 3) * 0.08} className="group">
-                    <EditorialImage
-                      src={img}
-                      alt={a.showroomTitle || "BELOVI showroom"}
-                      placeholderLabel="Showroom"
-                      ratio="aspect-[4/5]"
-                      className="rounded-2xl"
-                    />
-                  </Reveal>
-                ))}
-              </div>
-            )}
-
-            {mapUrl && (
-              <Reveal className="mt-12">
-                {/* Lazy so the map never competes with the page's own content for
-                    bandwidth, and never blocks the LCP on a phone. */}
-                <iframe
-                  src={mapUrl}
-                  title="BELOVI showroom location"
-                  loading="lazy"
-                  referrerPolicy="no-referrer-when-downgrade"
-                  className="w-full h-[320px] sm:h-[420px] rounded-2xl border border-line grayscale-[0.2]"
-                />
-              </Reveal>
-            )}
-          </div>
-        </section>
-      )}
-
-      {/* ── Closing CTA ───────────────────────────────────────────────────── */}
-      <section className="bg-beige">
-        <div className="max-w-[1500px] mx-auto px-6 sm:px-10 lg:px-16 py-14 sm:py-20 text-center">
-          <Reveal>
-            <p className="eyebrow text-bronze-deep mb-4">Visit or enquire</p>
-            <h2 className="font-display font-light leading-[1.12] text-[clamp(1.6rem,3vw,2.3rem)] text-ink max-w-2xl mx-auto">
-              We would be glad to hear from you.
-            </h2>
-            <div className="mt-9 flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
-              <ButtonLink href="/contact" variant="outline" size="md">
-                Contact Us
-              </ButtonLink>
-              <ButtonLink href="/products" variant="outline" size="md" arrow={false}>
-                Browse the Collection
-              </ButtonLink>
-            </div>
-          </Reveal>
-        </div>
-      </section>
     </main>
   );
 }

@@ -40,10 +40,14 @@ export default function Logo({
   }
 
   return (
+    // The supplied wordmark, which already carries its own colour — seven white
+    // letterforms plus the red "O" and ".IN". Vector rather than the old PNG, so
+    // it stays crisp at the footer's 80px and costs 3.7KB. It has no plate, so
+    // unlike the PNG it can sit on any dark surface without a black box.
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src="/images/logo-alt.png"
-      alt="BELOVI"
+      src="/images/Vector.svg"
+      alt="BELOVI.IN"
       fetchPriority={priority ? "high" : "auto"}
       className={`object-contain ${className}`}
     />

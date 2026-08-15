@@ -3,9 +3,13 @@ import { apiBase } from "./story";
 /**
  * The About Us page content, as authored in the studio.
  *
- * One singleton, four blocks — intro, company profile, vision, showroom. The
- * *story* is deliberately absent: that stays the StorySection feed the About
- * page renders between vision and showroom, so it is written in one place.
+ * One singleton: a banner plus four blocks — company profile, story, vision,
+ * showroom — matching the four alternating rows of the design.
+ *
+ * Several fields here are no longer drawn on the page (the eyebrows,
+ * `visionPoints`, the showroom address/hours/map): the redesign has no place for
+ * them. They stay on the interface because they stay in the database and in the
+ * studio form, so no authored copy is silently dropped.
  *
  * Every field is optional; each block on the page omits itself when its content
  * is missing, so an unfilled About renders shorter rather than broken. Content
@@ -28,9 +32,14 @@ export interface AboutPage {
   profileBody?: string;
   profileImage?: string;
 
+  storyTitle?: string;
+  storyBody?: string;
+  storyImage?: string;
+
   visionEyebrow?: string;
   visionTitle?: string;
   visionBody?: string;
+  visionImage?: string;
   visionPoints?: VisionPoint[];
 
   showroomEyebrow?: string;

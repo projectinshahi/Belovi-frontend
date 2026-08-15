@@ -1,6 +1,14 @@
 // Shared product shape + helpers for the storefront.
 
 export interface Variant {
+  /**
+   * What the API actually returns — the backend's Product model calls this
+   * `size` and always has. `volume` below is a storefront-only name that no
+   * payload ever carries; it is left in place because CartContext and
+   * SizeSelector still read it, and correcting those is a separate change from
+   * this type telling the truth.
+   */
+  size?: string;
   volume?: string;
   price: number;
   oldPrice?: number;
@@ -167,4 +175,126 @@ export function productTags(p: Product): ProductTag[] {
 /** Indian rupee formatting: ₹18,500 */
 export function formatINR(amount: number): string {
   return "₹" + Math.round(amount).toLocaleString("en-IN");
+}
+
+// ─── Collection-page facets ──────────────────────────────────────────────────
+
+/**
+ * The colourways a piece is offered in, deduplicated.
+ *
+ * Colour lives on the variant, not the product — a piece in three colourways is
+ * one product with three variants — so the collection page's Color filter reads
+ * from here rather than from a product-level field. No backend change was needed
+ * for it; the data was already being stored.
+ */
+export function productColors(p: Product): string[] {
+  const seen = new Set<string>();
+  for (const v of p.variants || []) {
+    const c = (v.color || "").trim();
+    if (c) seen.add(c.toLowerCase());
+  }
+  return [...seen];
+}
+
+export interface PriceBand {
+  id: string;
+  label: string;
+  min: number;
+  /** Exclusive. `Infinity` for the open-ended top band. */
+  max: number;
+}
+
+/**
+ * The price bands exactly as Figma draws them.
+ *
+ * Ranges are half-open — `min <= price < max` — so a piece at exactly ₹2,000
+ * lands in "2000 - 4000" and never in two bands at once. The labels overlap at
+ * the boundaries because the design writes them that way; the arithmetic does
+ * not.
+ *
+ * ponytail: fixed bands, not derived from the catalogue's own spread. Today's
+ * range is ₹500–₹100,000, so nearly everything sits in the top band; revisit
+ * with quantile-derived bands once the catalogue is broad enough for that to
+ * mean anything.
+ */
+export const PRICE_BANDS: PriceBand[] = [
+  { id: "0-2000", label: "0 - 2000", min: 0, max: 2000 },
+  { id: "2000-4000", label: "2000 - 4000", min: 2000, max: 4000 },
+  { id: "4000-8000", label: "4000 - 8000", min: 4000, max: 8000 },
+  { id: "8000-10000", label: "8000 - 10,000", min: 8000, max: 10000 },
+  { id: "10000-plus", label: "10,000+", min: 10000, max: Infinity },
+];
+
+export function inPriceBand(price: number, band: PriceBand): boolean {
+  return price >= band.min && price < band.max;
+}
+
+/**
+ * The Material and Color options Figma lists, as a fixed baseline.
+ *
+ * The panel unions these with whatever the catalogue actually carries, so the
+ * page matches the design on day one AND a fabric the studio types into a new
+ * product still becomes a filter with no code change. An option nothing matches
+ * renders disabled rather than hidden — the design shows a full panel, and a
+ * checkbox that silently returns nothing is worse than one that says so.
+ */
+export const FIGMA_MATERIALS = [
+  "Leather",
+  "Velvet",
+  "Faux Leather",
+  "Microfiber",
+  "Piping",
+];
+
+/**
+ * Figma lists "Red" twice — once with a red swatch and once with a black one.
+ * The second is Black; the duplicated label is a slip in the file, and shipping
+ * two identical checkboxes that filter differently would be a bug on the page.
+ */
+export const FIGMA_COLORS: { name: string; swatch: string }[] = [
+  { name: "Red", swatch: "#D32F2F" },
+  { name: "Black", swatch: "#010101" },
+  { name: "Grey", swatch: "#9A9A9A" },
+  { name: "Orange", swatch: "#F26722" },
+  { name: "Pink", swatch: "#FF2D7E" },
+  { name: "Maroon", swatch: "#7B1113" },
+];
+
+/**
+ * A drawable swatch for a colour name. The design's six get their exact tone;
+ * anything the studio types falls through to the CSS colour keyword, which
+ * covers the values actually in the catalogue (blue, ivory, red, yellow) and
+ * quietly renders nothing for a name CSS doesn't know.
+ */
+export function colorSwatch(name: string): string {
+  const known = FIGMA_COLORS.find((c) => c.name.toLowerCase() === name.toLowerCase());
+  return known ? known.swatch : name.toLowerCase();
+}
+
+/**
+ * The design's own product photography, in the order BELOVA supplied it.
+ *
+ * These OVERRIDE the studio's uploads on the collection grid — the catalogue
+ * currently holds stock interiors rather than Belovi's own pieces, and the grid
+ * is the page that has to sell them. Assigned by card POSITION, not per product,
+ * so the grid never repeats a shot until it has run through all seven. Spaces
+ * are percent-encoded so the src needs no browser fixup.
+ *
+ * ponytail: a hardcoded override, and it is a trap by design — once real product
+ * photography is uploaded in Studio → Products, these will still win and the new
+ * uploads will never appear. Delete this array and the `imageOverride` prop
+ * passed in ProductBrowser at that point; nothing else references it.
+ */
+export const COLLECTION_IMAGES = [
+  "/images/img%203.png",
+  "/images/img%202.png",
+  "/images/img%201.png",
+  "/images/Component%204.png",
+  "/images/Component%203.png",
+  "/images/Component%202.png",
+  "/images/Component%201.png",
+];
+
+export function collectionImage(index: number): string {
+  return COLLECTION_IMAGES[index % COLLECTION_IMAGES.length];
 }

@@ -1,28 +1,45 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useReducedMotion } from "framer-motion";
 import Link from "next/link";
-import Breadcrumbs from "../../../components/common/Breadcrumbs";
 import axios from "axios";
 import { useParams, usePathname, useRouter } from "next/navigation";
-import { isSignedIn, signInHref } from "../../../lib/auth";
-import { Check, Shield, Truck, MessageCircle, Loader2 } from "lucide-react";
-import { useCart } from "../../../context/CartContext";
-import { formatINR } from "../../../lib/product";
-import { Button } from "../../../components/ui/Button";
+import { Check, Loader2 } from "lucide-react";
+import ProductCard from "../../../components/ui/ProductCard";
 import Reveal from "../../../components/ui/Reveal";
+import { Button } from "../../../components/ui/Button";
+import { Skeleton } from "../../../components/ui/States";
+import { useCart } from "../../../context/CartContext";
+import { isSignedIn, signInHref } from "../../../lib/auth";
+import { formatINR, type Product as CardProduct } from "../../../lib/product";
 import Gallery from "./_components/Gallery";
-import Accordion from "./_components/Accordion";
-import { useSettings } from "../../../context/SettingsContext";
+import StockPill, { isInStock } from "./_components/StockPill";
+import QuantityStepper from "./_components/QuantityStepper";
+import VariantSelector from "./_components/VariantSelector";
+import CountUpPrice from "./_components/CountUpPrice";
+import { flyToCart } from "./_components/flyToCart";
 
-const DEFAULT_SHIPPING =
-  "In-stock furniture pieces are dispatched within 2-4 working days. Delivery takes 7-14 working days. White-glove delivery available.";
+/**
+ * Product detail — rebuilt to the Figma frame (node 65:3451).
+ *
+ * A gallery on the left, the purchase column on the right, and a rail of
+ * suggestions beneath. The frame drops everything the previous page carried
+ * below the buttons — six accordions, the trust row, the dimensions line, the
+ * WhatsApp link — and those are gone here too. The studio still authors those
+ * fields; the admin form now says they are not shown.
+ *
+ * THE PURCHASE LOGIC IS UNCHANGED. Every guard from the previous page survives
+ * verbatim: the sign-in redirect returns to THIS piece rather than the homepage,
+ * a zero-priced option cannot reach the cart, and `commitToCart` returns a real
+ * boolean so Buy Now navigates on the result instead of on a timer. The redesign
+ * is a redesign; it is not an excuse to reopen a settled checkout path.
+ */
 
-/** Per-order ceiling. Furniture is not bought by the dozen; the old control had
- *  no upper bound at all, so a stray key-repeat could send qty 400 to checkout. */
+/** Per-order ceiling. Furniture is not bought by the dozen. */
 const MAX_QTY = 10;
 
-/** How many pieces the "Complete the Look" rail shows. */
+/** How many pieces the "Suggested for you" rail shows — Figma draws four. */
 const RELATED_LIMIT = 4;
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000").replace(
@@ -31,47 +48,31 @@ const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000").re
 );
 
 interface Variant {
-  size: string;
+  size?: string;
   color?: string;
   material?: string;
   price: number;
   oldPrice?: number;
-  /** Shots specific to this variant — they lead the gallery when it is chosen. */
+  /** Shots specific to this variant — they follow the product's own. */
   images?: string[];
-}
-
-interface Spec {
-  label: string;
-  value: string;
-}
-
-/** Shape of a card in the related rail, from either source. */
-interface RelatedCard {
-  _id?: string;
-  id?: string;
-  name?: string;
-  images?: string[];
-  variants?: Variant[];
 }
 
 interface Product {
   id: string;
   name: string;
   category: string;
-  collectionName: string;
-  dimensions: string;
-  warranty: string;
-  features: string[];
-  careInstructions: string;
-  shippingReturns: string;
-  materials: string[];
-  specs: Spec[];
-  /** Product-level shots, shown for every variant. */
+  description: string;
+  status: string;
   images: string[];
+  /** Short selling points the studio typed, one per line, in its order. */
+  features: string[];
   variants: Variant[];
-  /** Curated in the admin. Empty is normal — the rail falls back to category. */
-  relatedProducts: RelatedCard[];
+  /** Curated in the admin. These LEAD the suggestion rail; peers fill the rest. */
+  relatedProducts: CardProduct[];
 }
+
+/** `null` = not found (404). `"error"` = the request itself failed. */
+type LoadState = Product | null | "error";
 
 export default function ProductDetailPage() {
   const params = useParams();
@@ -80,97 +81,82 @@ export default function ProductDetailPage() {
   const pathname = usePathname();
   const id = params?.id as string;
 
-  const [product, setProduct] = useState<Product | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  const [selectedVariant, setSelectedVariant] = useState<number>(0);
-  const [quantity, setQuantity] = useState<number>(1);
+  const [state, setState] = useState<LoadState | undefined>(undefined);
+  const [selectedVariant, setSelectedVariant] = useState(0);
+  const [quantity, setQuantity] = useState(1);
   const [added, setAdded] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [isBuying, setIsBuying] = useState(false);
   const [cartError, setCartError] = useState<string | null>(null);
-  /** Same-category pieces, used only when nothing is curated. */
-  const [categoryPeers, setCategoryPeers] = useState<RelatedCard[]>([]);
+  const [peers, setPeers] = useState<CardProduct[]>([]);
+  /** Flight origin for the add-to-cart dot. */
+  const addBtnRef = useRef<HTMLButtonElement>(null);
 
   const { addToCart } = useCart();
-  const { whatsappNumber } = useSettings();
+  const reduce = useReducedMotion();
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const fetchProduct = async () => {
-      try {
-        setLoading(true);
-        const res = await axios.get(`${API_BASE}/api/v1/products/${id}`);
-        const json = res.data;
-        if (cancelled || !json.success || !json.data) return;
-
-        const p = json.data;
-        setProduct({
-          id: p._id,
-          name: p.name || "",
-          category: p.category || "",
-          collectionName: p.collectionName || "",
-          dimensions: p.dimensions || "",
-          warranty: p.warranty || "",
-          features: p.features || [],
-          careInstructions: p.careInstructions || "",
-          shippingReturns: p.shippingReturns || "",
-          materials: p.materials || [],
-          specs: Array.isArray(p.specifications) ? p.specifications : [],
-          // Variant shots are no longer flattened in here — they are attached to
-          // their own variant so choosing one actually changes the gallery.
-          images: (p.images || []).filter(Boolean),
-          variants: (p.variants || []).map((v: any) => ({
-            size: v.size || "",
-            color: v.color || "",
-            material: v.material || "",
-            price: v.price || 0,
-            oldPrice: v.oldPrice,
-            images: (v.images || []).filter(Boolean),
-          })),
-          relatedProducts: p.relatedProducts || [],
-        });
-        setSelectedVariant(0);
-        setQuantity(1);
-      } catch (error) {
-        console.error("Failed to fetch product:", error);
-      } finally {
-        if (!cancelled) setLoading(false);
+  const load = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/api/v1/products/${id}`);
+      const p = res.data?.data;
+      if (!res.data?.success || !p) {
+        setState(null);
+        return;
       }
-    };
-
-    if (id) fetchProduct();
-    return () => {
-      cancelled = true;
-    };
+      setState({
+        id: p._id,
+        name: p.name || "",
+        category: p.category || "",
+        description: p.description || "",
+        status: p.status || "",
+        images: (p.images || []).filter(Boolean),
+        features: ((p.features as string[]) || []).map((f) => (f || "").trim()).filter(Boolean),
+        variants: (p.variants || []).map((v: Record<string, unknown>) => ({
+          size: (v.size as string) || "",
+          color: (v.color as string) || "",
+          material: (v.material as string) || "",
+          price: (v.price as number) || 0,
+          oldPrice: v.oldPrice as number | undefined,
+          images: ((v.images as string[]) || []).filter(Boolean),
+        })),
+        relatedProducts: (p.relatedProducts || []) as CardProduct[],
+      });
+      setSelectedVariant(0);
+      setQuantity(1);
+    } catch (err) {
+      /* A 404 means the piece is gone; anything else means we couldn't ask.
+         Telling a customer a product was withdrawn when the studio is simply
+         unreachable loses a sale that was never lost. */
+      setState(axios.isAxiosError(err) && err.response?.status === 404 ? null : "error");
+    }
   }, [id]);
 
+  useEffect(() => {
+    if (id) void load();
+  }, [id, load]);
+
+  const product = state && state !== "error" ? state : null;
+
   /**
-   * Fallback for the related rail.
+   * Same-category pieces for the suggestion rail.
    *
-   * The rail used to render only what the studio had hand-linked, so a piece
-   * with nothing curated showed no rail at all — a dead end at the bottom of
-   * the page. This fills it from the same category, then the same collection,
-   * excluding the piece itself. Curated links always win when they exist.
+   * Fetched ALWAYS, not only when the studio curated nothing. Curated links used
+   * to suppress this request entirely, which meant picking a single related
+   * piece in the admin shrank the rail from four to one — manual selection made
+   * the page worse. They are merged below instead: curated first, peers filling
+   * whatever is left.
    */
   useEffect(() => {
-    if (!product || product.relatedProducts.length > 0) return;
+    if (!product) return;
     let cancelled = false;
+    const { id: selfId, category } = product;
 
     axios
       .get(`${API_BASE}/api/v1/products`)
       .then((res) => {
         if (cancelled) return;
-        const all: any[] = Array.isArray(res.data?.data) ? res.data.data : [];
-        const peers = all.filter(
-          (p) =>
-            p._id !== product.id &&
-            (p.category
-              ? p.category === product.category
-              : product.collectionName && p.collectionName === product.collectionName)
-        );
-        setCategoryPeers(peers.slice(0, RELATED_LIMIT));
+        const all: CardProduct[] = Array.isArray(res.data?.data) ? res.data.data : [];
+        setPeers(all.filter((p) => p._id !== selfId && (!category || p.category === category)));
       })
       .catch(() => {
         // A failed lookup just leaves the rail hidden — never blocks the page.
@@ -182,70 +168,125 @@ export default function ProductDetailPage() {
   }, [product]);
 
   const currentVariant = product?.variants[selectedVariant] ?? product?.variants[0];
-  const hasVariants = (product?.variants.length ?? 0) > 0;
 
   /**
-   * Product shots first, then the chosen variant's own. Recomputed per variant,
-   * and the Gallery is keyed on the selection so it resets to the first frame
-   * instead of holding an index that no longer exists.
+   * The chosen variant's OWN photography leads, then the product's shared
+   * frames; duplicates are dropped so a shot filed in both places is not shown
+   * twice.
+   *
+   * The shared frames used to lead. That made selecting a colourway look
+   * broken: the gallery resets to frame one on every change, so a variant with
+   * its own photography still opened on the same shared shot, and its images
+   * sat somewhere down the thumbnail row. Leading with them is what makes
+   * choosing a variant visibly do something.
    */
   const galleryImages = useMemo(() => {
     if (!product) return [];
-    return [...product.images, ...(currentVariant?.images ?? [])];
+    return [...new Set([...(currentVariant?.images ?? []), ...product.images])];
   }, [product, currentVariant]);
 
-  const related = product
-    ? (product.relatedProducts.length > 0 ? product.relatedProducts : categoryPeers)
-    : [];
+  // ── States ────────────────────────────────────────────────────────────────
 
-  if (loading) {
+  if (state === undefined) {
     return (
-      <div className="min-h-screen bg-[#faf9f6] pt-[68px] lg:pt-[84px] flex items-center justify-center">
-        <div className="h-9 w-9 animate-spin rounded-full border border-line border-t-[#1a1a1a]" />
-      </div>
+      <main className="surface-light min-h-screen bg-[#F5F5F5] pt-[92px] lg:pt-[106px]">
+        <div className="section-x w-full max-w-[1280px] mx-auto py-10">
+          <Skeleton className="h-4 w-56" />
+          <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-[531px_1fr] lg:gap-6">
+            <div>
+              <Skeleton className="aspect-[531/515] w-full rounded-[28px] lg:rounded-[58px]" />
+              <div className="mt-6 flex gap-3 sm:gap-6">
+                {[0, 1, 2].map((i) => (
+                  <Skeleton
+                    key={i}
+                    className="h-[84px] w-[84px] rounded-[16px] sm:h-[120px] sm:w-[120px] lg:h-[159px] lg:w-[159px] lg:rounded-[24px]"
+                  />
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-col justify-end gap-6 pb-2">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-8 w-3/4" />
+              <Skeleton className="h-9 w-40" />
+              <Skeleton className="h-5 w-full max-w-[520px]" />
+              <Skeleton className="h-[64px] w-full max-w-[600px] rounded-[37px]" />
+            </div>
+          </div>
+        </div>
+      </main>
     );
   }
 
   if (!product) {
+    const gone = state === null;
     return (
-      <div className="min-h-screen bg-[#faf9f6] pt-[68px] lg:pt-[84px] flex flex-col items-center justify-center text-center px-6">
-        <p className="eyebrow text-bronze-deep mb-4">Not found</p>
-        <h1 className="font-display font-light text-[clamp(2rem,4.5vw,3rem)] leading-[1.08] text-[#1a1a1a] mb-4">
-          This piece has moved on
+      <main className="surface-light flex min-h-screen flex-col items-center justify-center bg-[#F5F5F5] px-6 pt-[92px] text-center lg:pt-[106px]">
+        <h1 className="display-section font-medium text-ink">
+          {gone ? "This piece has moved on" : "We couldn’t load this piece"}
         </h1>
-        <Button variant="outline" size="md" onClick={() => router.push("/products")}>
-          Browse the collection
-        </Button>
-      </div>
+        <p className="mt-4 max-w-[46ch] text-body text-muted">
+          {gone
+            ? "It is no longer part of the collection. There is plenty else to see."
+            : "The studio didn’t answer just now. It is usually a moment’s outage."}
+        </p>
+        <div className="mt-9">
+          {gone ? (
+            <Button variant="solid" size="md" onClick={() => router.push("/products")}>
+              Browse the collection
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="md"
+              arrow={false}
+              onClick={() => {
+                setState(undefined);
+                void load();
+              }}
+            >
+              Try again
+            </Button>
+          )}
+        </div>
+      </main>
     );
   }
 
+  // ── Purchase ──────────────────────────────────────────────────────────────
+
   const price = currentVariant?.price ?? 0;
   const oldPrice =
-    currentVariant?.oldPrice && currentVariant.oldPrice > price ? currentVariant.oldPrice : undefined;
+    currentVariant?.oldPrice && currentVariant.oldPrice > price
+      ? currentVariant.oldPrice
+      : undefined;
+  const discountPct = oldPrice ? Math.round(((oldPrice - price) / oldPrice) * 100) : 0;
 
+  const inStock = isInStock(product.status);
   const busy = isAdding || isBuying;
+  /* Curated first, in the studio's own order, then same-category pieces fill the
+     rest of the row. Deduped by id so a piece that is both curated and a peer
+     appears once — and keeps its curated position, since the first occurrence
+     wins. Either source alone still fills the rail, so a page with no curation
+     and a page with four hand-picked links both read as designed. */
+  const related = [...product.relatedProducts, ...peers]
+    .filter((p, i, all) => all.findIndex((o) => o._id === p._id) === i)
+    .slice(0, RELATED_LIMIT);
 
-  /**
-   * Returns true only once the line is really in the cart, so "Buy Now" can
-   * navigate on the result instead of on a timer.
-   */
+  /** True only once the line is really in the cart, so Buy Now can act on it. */
   const commitToCart = async (): Promise<boolean> => {
     setCartError(null);
 
-    // Not signed in: go and sign in, then come back to THIS piece rather than
-    // the homepage — the customer was mid-purchase, and dropping them on the
-    // homepage means finding the product again from scratch.
+    // Mid-purchase: sign in, then come back to THIS piece rather than the
+    // homepage, which would mean finding the product again from scratch.
     if (!isSignedIn()) {
       router.push(signInHref(pathname));
       return false;
     }
-    // A piece with variants must have one chosen, and it must be priced —
-    // adding a ₹0 line to the cart is how free orders reach checkout.
-    if (hasVariants && !currentVariant) {
+    if (product.variants.length > 0 && !currentVariant) {
       setCartError("Choose an option before adding to your bag.");
       return false;
     }
+    // A ₹0 line is how a free order reaches checkout.
     if (price <= 0) {
       setCartError("This option is not available to order. Please choose another.");
       return false;
@@ -263,8 +304,7 @@ export default function ProductDetailPage() {
         quantity,
       });
       return true;
-    } catch (err) {
-      console.error("Add to cart failed:", err);
+    } catch {
       setCartError("We could not add that to your bag. Please try again.");
       return false;
     }
@@ -276,7 +316,8 @@ export default function ProductDetailPage() {
     try {
       if (await commitToCart()) {
         setAdded(true);
-        setTimeout(() => setAdded(false), 2500);
+        flyToCart(addBtnRef.current, !!reduce);
+        setTimeout(() => setAdded(false), 1500);
       }
     } finally {
       setIsAdding(false);
@@ -287,8 +328,8 @@ export default function ProductDetailPage() {
     if (busy) return;
     setIsBuying(true);
     try {
-      // Stays busy through the navigation — resetting here would flash the
-      // idle label for a frame before the route changes.
+      // Stays busy through the navigation — resetting here would flash the idle
+      // label for a frame before the route changes.
       if (await commitToCart()) {
         router.push("/checkout");
         return;
@@ -298,307 +339,216 @@ export default function ProductDetailPage() {
     }
   };
 
-  const decreaseQuantity = () => setQuantity((q) => Math.max(1, q - 1));
-  const increaseQuantity = () => setQuantity((q) => Math.min(MAX_QTY, q + 1));
+  /* 14px/36px padding on a full pill, per the reference — a fixed height would
+     stop the label and the spinner sharing one box cleanly. `active:scale-97`
+     is the press; the lift is on hover only. */
+  const ctaBase =
+    "inline-flex items-center justify-center gap-2 rounded-full px-8 py-[14px] font-sans " +
+    "text-[15px] font-medium transition-[background-color,transform,box-shadow] duration-300 " +
+    "ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.97] " +
+    "disabled:pointer-events-none disabled:opacity-50 sm:px-9 sm:text-[16px]";
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-[#faf9f6] pt-[68px] text-[#1a1a1a] lg:pt-[84px]">
-      <div className="mx-auto max-w-[1500px] px-6 sm:px-10 lg:px-16">
-        <Breadcrumbs
-          currentLabel={product.name}
-          className="py-8 [&_a:hover]:text-[#1a1a1a] !text-[#1a1a1a]/60"
-        />
+    <main className="surface-light min-h-screen bg-[#F5F5F5] pt-[92px] lg:pt-[106px]">
+      <div className="pt-[40px] pb-16 lg:pb-24 px-6 lg:px-[6vw] w-full max-w-[1280px] mx-auto">
+        <nav aria-label="Breadcrumb" className="flex items-center gap-2 mb-[32px] font-sans text-[14px] font-normal">
+          <Link href="/" className="text-[#BDBDBD] hover:text-[#1A1A1A] transition-colors">Home</Link>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className="h-[12px] w-[12px] text-[#BDBDBD] shrink-0"><path d="m9 5 7 7-7 7" /></svg>
+          <Link href="/products" className="text-[#BDBDBD] hover:text-[#1A1A1A] transition-colors">Collection</Link>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className="h-[12px] w-[12px] text-[#BDBDBD] shrink-0"><path d="m9 5 7 7-7 7" /></svg>
+          <span aria-current="page" className="text-[#D32F2F]">Product Detail</span>
+        </nav>
 
-        <section className="grid grid-cols-1 gap-12 pb-24 lg:grid-cols-[60fr_40fr] lg:gap-20 xl:gap-28 lg:pb-32">
+        <section className="mt-6 grid grid-cols-1 gap-10 sm:mt-8 lg:grid-cols-[45fr_55fr] lg:gap-[clamp(40px,5vw,80px)]">
           <Reveal>
-            {/* Keyed on the variant so the active frame resets with the set. */}
+            {/* Keyed on the variant so the active frame resets with the set
+                rather than holding an index the new set may not have. */}
             <Gallery key={selectedVariant} images={galleryImages} name={product.name} />
           </Reveal>
 
-          <Reveal delay={0.12} className="flex flex-col">
-            {product.collectionName && (
-              <span className="eyebrow bg-[#d8c3a5] px-3 py-2 w-max text-[#1a1a1a] mb-6">
-                {product.collectionName}
-              </span>
+          {/* Figma bottom-aligns the copy against the image. Below `lg` the two
+              stack, where alignment is meaningless. */}
+          {/* Each row arrives on its own beat, top to bottom, so the column
+              reads in the order it should be understood: what it is, what it
+              costs, what it saves, what it is like, then how to buy it. */}
+          <div className="flex flex-col justify-end gap-[20px] lg:gap-[24px] lg:pb-2">
+            {product.category && (
+              <Reveal y={24} delay={0.08}>
+                <p className="font-sans text-[14px] tracking-[0.05em] text-[#9E9E9E] uppercase mb-[8px] sm:text-[15px]">
+                  {product.category}
+                </p>
+              </Reveal>
             )}
 
-            <h1 className="font-display text-[clamp(2.5rem,4vw,3.5rem)] font-light leading-[1.1] text-[#1a1a1a]">
-              {product.name}
-            </h1>
+            <Reveal y={24} delay={0.16} className="flex flex-wrap items-center gap-[12px]">
+              <h1 className="font-sans text-[clamp(22px,2.5vw,30px)] font-[500] sm:font-[600] leading-[1.3] text-[#1A1A1A]">
+                {product.name}
+              </h1>
+              {product.status && <StockPill status={product.status} />}
+            </Reveal>
 
-            <div className="mt-6 flex items-baseline gap-4">
-              <span className="font-display text-4xl font-light text-[#1a1a1a]">
-                {formatINR(price)}
-              </span>
+            <Reveal y={24} delay={0.24} className="flex flex-wrap items-baseline gap-[16px]">
+              {price > 0 ? (
+                <CountUpPrice
+                  value={price}
+                  className="font-sans text-[28px] sm:text-[32px] font-bold text-[#1A1A1A]"
+                />
+              ) : (
+                <span className="font-sans text-[28px] sm:text-[32px] font-bold text-[#1A1A1A]">
+                  Enquire
+                </span>
+              )}
               {oldPrice && (
-                <span className="font-display text-2xl text-[#1a1a1a]/40 line-through">
+                <span className="font-sans text-[20px] text-[#BDBDBD] line-through sm:text-[22px]">
                   {formatINR(oldPrice)}
                 </span>
               )}
-            </div>
+            </Reveal>
 
-            {product.dimensions && (
-              <p className="mt-4 font-sans text-sm tracking-wide text-[#1a1a1a]/60 uppercase">
-                Dimensions: {product.dimensions}
-              </p>
+            {discountPct > 0 && (
+              <Reveal y={24} delay={0.32}>
+                <span className="inline-flex w-max items-center justify-center rounded-[8px] bg-[#D32F2F] px-[16px] py-[8px] font-sans text-[13px] font-medium uppercase text-white sm:text-[14px] mt-[4px]">
+                  {discountPct}% OFF
+                </span>
+              </Reveal>
             )}
 
-            {hasVariants && (
-              <div className="mt-10">
-                <span id="variant-label" className="eyebrow text-[#1a1a1a]/60 mb-4 block">
-                  Select Variant
-                </span>
-                <div className="flex flex-col gap-3" role="radiogroup" aria-labelledby="variant-label">
-                  {product.variants.map((v, i) => {
-                    const isSelected = selectedVariant === i;
-                    return (
-                      <button
-                        key={i}
-                        type="button"
-                        role="radio"
-                        aria-checked={isSelected}
-                        onClick={() => setSelectedVariant(i)}
-                        className={`flex flex-col items-start p-4 border transition-all duration-300 ${
-                          isSelected
-                            ? "border-[#1a1a1a] bg-[#1a1a1a]/5"
-                            : "border-[#1a1a1a]/10 hover:border-[#1a1a1a]/30"
-                        }`}
-                      >
-                        <span className="font-sans text-sm tracking-wide uppercase font-medium text-[#1a1a1a]">
-                          {v.size}
-                        </span>
-                        {(v.color || v.material) && (
-                          <span className="font-sans text-xs text-[#1a1a1a]/60 mt-1">
-                            {v.color} {v.color && v.material && "·"} {v.material}
-                          </span>
-                        )}
-                        {v.price > 0 && (
-                          <span className="font-sans text-xs text-[#1a1a1a]/70 mt-1.5">
-                            {formatINR(v.price)}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Quantity */}
-            <div className="mt-10">
-              <span id="qty-label" className="eyebrow text-[#1a1a1a]/60 mb-4 block">
-                Quantity
-              </span>
-              <div className="flex items-center w-max border border-[#1a1a1a]/20">
-                <button
-                  type="button"
-                  onClick={decreaseQuantity}
-                  disabled={quantity <= 1}
-                  aria-label="Decrease quantity"
-                  className="px-5 py-3 hover:bg-[#1a1a1a]/5 transition-colors text-[#1a1a1a] disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  -
-                </button>
-                <span
-                  aria-live="polite"
-                  aria-labelledby="qty-label"
-                  className="px-5 py-3 min-w-[50px] text-center font-sans text-[#1a1a1a]"
-                >
-                  {quantity}
-                </span>
-                <button
-                  type="button"
-                  onClick={increaseQuantity}
-                  disabled={quantity >= MAX_QTY}
-                  aria-label="Increase quantity"
-                  className="px-5 py-3 hover:bg-[#1a1a1a]/5 transition-colors text-[#1a1a1a] disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  +
-                </button>
-              </div>
-              {quantity >= MAX_QTY && (
-                <p className="mt-2 font-sans text-xs text-[#1a1a1a]/60">
-                  {MAX_QTY} is the maximum per order. Need more? Talk to us.
+            {product.description && (
+              <Reveal y={24} delay={0.4}>
+                {/* `break-words` because the 200-character cap bounds the
+                    LENGTH, not the shape: 200 characters with no spaces is a
+                    single word that would otherwise run straight through the
+                    480px column and widen the whole purchase panel. */}
+                <p className="max-w-[480px] whitespace-pre-line break-words font-sans text-[15px] leading-[1.7] text-[#9E9E9E] sm:text-[16px] mt-[8px]">
+                  {product.description}
                 </p>
-              )}
-            </div>
+              </Reveal>
+            )}
+
+            {/* The studio's selling points, in the order it typed them. Set as a
+                real list so a screen reader announces the count, and marked
+                with the brand dot rather than a bullet glyph to sit with the
+                rest of the column. */}
+            {product.features.length > 0 && (
+              <Reveal y={24} delay={0.42}>
+                <ul className="flex max-w-[480px] flex-col gap-[10px]">
+                  {product.features.map((feature, i) => (
+                    <li
+                      key={`${feature}-${i}`}
+                      className="flex items-start gap-[10px] break-words font-sans text-[15px] leading-[1.6] text-[#4A4A4A] sm:text-[16px]"
+                    >
+                      <span
+                        aria-hidden
+                        className="mt-[8px] h-[5px] w-[5px] shrink-0 rounded-full bg-[#D32F2F]"
+                      />
+                      {/* Its own box, and `min-w-0`: a flex item defaults to
+                          `min-width: auto`, which refuses to shrink below its
+                          longest word — so an unbroken feature would push the
+                          column wide no matter what `break-words` says. */}
+                      <span className="min-w-0 break-words">{feature}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Reveal>
+            )}
+
+            <Reveal y={24} delay={0.44}>
+              <VariantSelector
+                variants={product.variants}
+                selected={selectedVariant}
+                onSelect={(i) => {
+                  setSelectedVariant(i);
+                  setCartError(null);
+                }}
+              />
+            </Reveal>
 
             {cartError && (
-              <p role="alert" className="mt-6 border border-[#8B0A15]/30 bg-[#8B0A15]/5 px-4 py-3 font-sans text-sm text-[#8B0A15]">
+              <p
+                role="alert"
+                className="rounded-[12px] border border-brand/30 bg-brand/5 px-4 py-3 font-sans text-[14px] text-brand"
+              >
                 {cartError}
               </p>
             )}
 
-            <div className="mt-10 flex flex-col sm:flex-row gap-4">
+            {!inStock && (
+              <p className="font-sans text-[14px] text-muted">
+                This piece is not available to order right now.
+              </p>
+            )}
+
+            <Reveal
+              y={24}
+              delay={0.52}
+              className="flex flex-col gap-[12px] sm:flex-row sm:flex-wrap sm:items-center sm:gap-[16px] mt-[16px]"
+            >
+              <QuantityStepper
+                value={quantity}
+                max={MAX_QTY}
+                onChange={setQuantity}
+                disabled={!inStock || busy}
+              />
+
               <button
                 type="button"
+                ref={addBtnRef}
                 onClick={handleAddToCart}
-                disabled={busy}
+                disabled={busy || !inStock}
                 aria-busy={isAdding}
-                className="flex-1 py-5 bg-transparent border border-[#1a1a1a] text-[#1a1a1a] font-sans text-xs uppercase tracking-widest hover:bg-[#1a1a1a]/5 transition-colors duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className={`${ctaBase} bg-[#D32F2F] text-[#FFFFFF] hover:-translate-y-[1px] hover:bg-[#E53935] hover:shadow-[0_4px_16px_rgba(211,40,40,0.25)]`}
               >
                 {isAdding ? (
                   <>
-                    <Loader2 size={16} className="animate-spin" /> Adding…
+                    <Loader2 size={18} className="animate-spin" aria-hidden /> Adding…
                   </>
                 ) : added ? (
                   <>
-                    <Check size={16} /> Added to Cart
+                    <Check size={18} aria-hidden /> Added ✓
                   </>
                 ) : (
                   "Add to Cart"
                 )}
               </button>
+
               <button
                 type="button"
                 onClick={handleBuyNow}
-                disabled={busy}
+                disabled={busy || !inStock}
                 aria-busy={isBuying}
-                className="flex-1 py-5 bg-[#1a1a1a] border border-[#1a1a1a] text-[#faf9f6] font-sans text-xs uppercase tracking-widest hover:bg-[#1a1a1a]/90 transition-colors duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className={`${ctaBase} bg-[#1A1A1A] text-[#FFFFFF] hover:-translate-y-[1px] hover:bg-[#333333]`}
               >
                 {isBuying ? (
                   <>
-                    <Loader2 size={16} className="animate-spin" /> Taking you to checkout…
+                    <Loader2 size={18} className="animate-spin" aria-hidden /> Taking you to
+                    checkout…
                   </>
                 ) : (
                   "Buy Now"
                 )}
               </button>
-            </div>
-
-            <div className="mt-8 grid grid-cols-2 gap-4 py-6 border-y border-[#1a1a1a]/10">
-              <div className="flex items-center gap-3 text-[#1a1a1a]/70">
-                <Truck size={18} strokeWidth={1.5} />
-                <span className="text-xs uppercase tracking-widest">Free Delivery</span>
-              </div>
-              <div className="flex items-center gap-3 text-[#1a1a1a]/70">
-                <Shield size={18} strokeWidth={1.5} />
-                <span className="text-xs uppercase tracking-widest">
-                  {product.warranty ? product.warranty : "Secure Warranty"}
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-10 flex flex-col gap-px bg-[#1a1a1a]/10">
-              {product.features.length > 0 && (
-                <div className="bg-[#faf9f6]">
-                  <Accordion title="Features">
-                    <ul className="list-disc pl-5 space-y-2">
-                      {product.features.map((feature, idx) => (
-                        <li key={idx} className="font-sans text-[14px] leading-relaxed text-[#1a1a1a]/70">
-                          {feature}
-                        </li>
-                      ))}
-                    </ul>
-                  </Accordion>
-                </div>
-              )}
-
-              {product.specs.length > 0 && (
-                <div className="bg-[#faf9f6]">
-                  <Accordion title="Specifications">
-                    <dl className="space-y-4">
-                      {product.specs.map((spec, i) => (
-                        <div key={i} className="flex justify-between border-b border-[#1a1a1a]/5 pb-3 last:border-0">
-                          <dt className="font-sans text-[14px] text-[#1a1a1a]/60">{spec.label}</dt>
-                          <dd className="font-sans text-[14px] text-[#1a1a1a] font-medium text-right">
-                            {spec.value}
-                          </dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </Accordion>
-                </div>
-              )}
-
-              {product.materials.length > 0 && (
-                <div className="bg-[#faf9f6]">
-                  <Accordion title="Materials">
-                    <p className="font-sans text-[14px] leading-relaxed text-[#1a1a1a]/70">
-                      {product.materials.join(" · ")}
-                    </p>
-                  </Accordion>
-                </div>
-              )}
-
-              {product.careInstructions && (
-                <div className="bg-[#faf9f6]">
-                  <Accordion title="Care Instructions">
-                    <p className="whitespace-pre-wrap font-sans text-[14px] leading-relaxed text-[#1a1a1a]/70">
-                      {product.careInstructions}
-                    </p>
-                  </Accordion>
-                </div>
-              )}
-
-              {product.warranty && (
-                <div className="bg-[#faf9f6]">
-                  <Accordion title="Warranty">
-                    <p className="whitespace-pre-wrap font-sans text-[14px] leading-relaxed text-[#1a1a1a]/70">
-                      {product.warranty}
-                    </p>
-                  </Accordion>
-                </div>
-              )}
-
-              <div className="bg-[#faf9f6]">
-                <Accordion title="Shipping & Delivery">
-                  <p className="whitespace-pre-wrap font-sans text-[14px] leading-relaxed text-[#1a1a1a]/70">
-                    {product.shippingReturns || DEFAULT_SHIPPING}
-                  </p>
-                </Accordion>
-              </div>
-            </div>
-
-            <a
-              href={`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(
-                `I have a question about ${product.name}`
-              )}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-8 flex items-center justify-center gap-2.5 font-sans text-[13px] text-[#1a1a1a]/70 hover:text-[#1a1a1a] transition-colors"
-            >
-              <MessageCircle size={16} strokeWidth={1.5} />
-              <span className="underline underline-offset-4">Need help deciding? Chat with us.</span>
-            </a>
-          </Reveal>
+            </Reveal>
+          </div>
         </section>
 
-        {/* Related — curated links when the studio has set them, otherwise the
-            rest of the category. */}
+        {/* ── Suggested ─────────────────────────────────────────────────────
+            The same ProductCard the collection grid uses, so a shopper meets
+            one card design across the whole catalogue. */}
         {related.length > 0 && (
-          <section className="py-24 border-t border-[#1a1a1a]/10">
-            <h2 className="font-display text-3xl font-light text-center mb-12 text-[#1a1a1a]">
-              {product.relatedProducts.length > 0 ? "Complete the Look" : `More in ${product.category}`}
+          <section className="mt-[80px]">
+            <h2 className="font-sans text-[clamp(24px,3vw,32px)] font-medium text-[#1A1A1A] mb-[32px]">
+              Suggested for you
             </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-              {related.slice(0, RELATED_LIMIT).map((rp, idx) => (
-                <Link href={`/products/${rp.id || rp._id}`} key={rp._id || rp.id || idx} className="group cursor-pointer">
-                  <div className="aspect-[4/5] bg-[#1a1a1a]/5 relative overflow-hidden mb-4">
-                    {rp.images && rp.images[0] ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={rp.images[0]}
-                        alt={rp.name || ""}
-                        loading="lazy"
-                        className="object-cover w-full h-full transition-transform duration-700 group-hover:scale-105"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center font-display text-[#1a1a1a]/20 text-sm uppercase tracking-widest">
-                        Belovi
-                      </div>
-                    )}
-                  </div>
-                  <h3 className="font-display text-lg mb-1 text-[#1a1a1a]">{rp.name}</h3>
-                  <p className="font-sans text-sm text-[#1a1a1a]/60">
-                    {rp.variants && rp.variants[0] ? formatINR(rp.variants[0].price) : "View details"}
-                  </p>
-                </Link>
+            <div className="grid grid-cols-2 gap-4 sm:gap-5 lg:grid-cols-4 lg:gap-6">
+              {related.map((rp, i) => (
+                <Reveal key={rp._id} delay={(i % 4) * 0.07}>
+                  <ProductCard product={rp} />
+                </Reveal>
               ))}
             </div>
           </section>
         )}
       </div>
-    </div>
+    </main>
   );
 }

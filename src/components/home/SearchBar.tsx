@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import Reveal from "../ui/Reveal";
-import { SHOP_CATEGORY_LINKS } from "../../lib/categories";
+import { useCategories } from "../../lib/categories";
 
 /**
  * Homepage search.
@@ -28,6 +28,9 @@ import { SHOP_CATEGORY_LINKS } from "../../lib/categories";
  */
 export default function SearchBar() {
   const [query, setQuery] = useState("");
+  /** The studio's categories. Empty until one is saved — the Browse row then
+   *  hides rather than leaving a stranded label with no chips beside it. */
+  const shopCategories = useCategories() ?? [];
   const router = useRouter();
 
   const submit = (e: React.FormEvent) => {
@@ -68,9 +71,13 @@ export default function SearchBar() {
             </div>
           </form>
 
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-x-3 gap-y-2">
+          <div
+            className={`mt-6 flex-wrap items-center justify-center gap-x-3 gap-y-2 ${
+              shopCategories.length > 0 ? "flex" : "hidden"
+            }`}
+          >
             <span className="font-sans text-[12px] text-muted">Browse</span>
-            {SHOP_CATEGORY_LINKS.map((c) => (
+            {shopCategories.map((c) => (
               <Link
                 key={c.id}
                 href={`/products?category=${c.id}`}

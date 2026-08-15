@@ -1,144 +1,248 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import Reveal from "../ui/Reveal";
-import { cldOptimize } from "../../lib/image";
-import { useCategories, type StoreCategory } from "../../lib/categories";
+import ProductCard from "../ui/ProductCard";
+import { ButtonLink } from "../ui/Button";
+import MagneticCta from "../ui/MagneticCta";
+import { EmptyState, ErrorState, SkeletonGrid } from "../ui/States";
+import { useCategories } from "../../lib/categories";
+import type { Product } from "../../lib/product";
 
-/**
- * One card: a rounded image frame with the label panel inset over its foot.
- *
- * A single `aspect-[4/5]` at every breakpoint — the tile used to switch
- * square → 4:5 → square, so a card changed shape twice on the way down and the
- * row never read as one set. 4:5 is the ratio ProductCard already uses, so the
- * homepage and the shop crop their photography identically.
- */
-function Tile({ category, index }: { category: StoreCategory; index: number }) {
-  return (
-    <Reveal delay={(index % 6) * 0.06} scaleFrom={0.96} className="col-span-1">
-      <Link
-        href={`/products?category=${category.id}`}
-        aria-label={`Shop ${category.name}`}
-        className="group block"
-      >
-        <div className="relative overflow-hidden rounded-2xl bg-sand aspect-[4/5]">
-          {category.image ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={cldOptimize(category.image, 800)}
-              alt={category.name}
-              className="absolute inset-0 h-full w-full object-cover transition-transform duration-[900ms] ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-[1.04]"
-            />
-          ) : (
-            <div className="absolute inset-0 img-placeholder transition-transform duration-[900ms] ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-[1.04]" />
-          )}
-
-          {/* Label panel, inset so the photograph frames it on all four sides.
-              Opaque rather than tinted: over an unknown photograph a translucent
-              panel cannot promise the 4.5:1 the type needs. */}
-          <div className="absolute inset-x-2 bottom-2 sm:inset-x-3 sm:bottom-3 rounded-xl bg-cream px-3 py-2.5 sm:px-4 sm:py-3 shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
-            <p className="font-display text-[14px] sm:text-[16px] leading-tight text-ink truncate">
-              {category.name}
-            </p>
-            <div className="mt-1.5 flex items-center justify-between gap-2">
-              <span className="font-sans text-[10px] sm:text-[11px] uppercase tracking-[0.14em] text-muted">
-                Shop Now
-              </span>
-              <ArrowRight
-                size={14}
-                aria-hidden
-                className="shrink-0 text-ink transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-1"
-              />
-            </div>
-          </div>
-        </div>
-      </Link>
-    </Reveal>
-  );
-}
-
-/** Same frame and panel geometry as `Tile`, so nothing shifts when it resolves. */
-function TileSkeleton() {
-  return (
-    <div className="col-span-1">
-      <div className="relative overflow-hidden rounded-2xl img-placeholder aspect-[4/5] w-full">
-        <div className="absolute inset-x-2 bottom-2 sm:inset-x-3 sm:bottom-3 rounded-xl bg-cream px-3 py-2.5 sm:px-4 sm:py-3">
-          <div className="h-3.5 w-2/3 bg-sand rounded" />
-          <div className="mt-2 h-2.5 w-1/3 bg-sand rounded" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const API_ORIGIN = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000").replace(
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000").replace(
   /\/api\/?$/,
   ""
 );
 
-const SECTION_DEFAULTS = {
-  eyebrow: "The Edit",
-  heading: "Find your way in.",
-  shopLabel: "Shop All",
-  shopHref: "/products",
+/**
+ * Categories — the black showroom band, where white cards are spotlit against
+ * the brand's own darkness.
+ *
+ * THE PILLS ARE THE STUDIO'S CATEGORIES, live from Category Management — not a
+ * list in this file. They used to be hardcoded, which is why a category added in
+ * the admin never showed up here: this section was reading a constant while the
+ * admin was writing to the database. Adding, renaming, deactivating or deleting
+ * one in the admin now changes this section on the next load, with no deploy.
+ *
+ * "All Products" is dropped when present: it is a filing option in the admin
+ * rather than a browsing one, and offering it beside the real categories reads
+ * as "everything" when it is actually its own bucket.
+ *
+ * Filtering is client-side over one catalogue request, so switching is instant
+ * and costs no round trip. The grid shows four; the pills are a taster and the
+ * catalogue CTA is the way through to the rest.
+ */
+const VISIBLE = 4;
+
+/**
+ * The design's own showcase pieces, in code rather than in the database.
+ *
+ * These four are art direction — they have to render on any machine and any
+ * database, including a fresh one, which seeded products cannot promise. They
+ * lead the Luxury Furniture pill and are shaped as `Product` so the same card
+ * component draws them; `href` sends them to the shop, since there is no detail
+ * page behind a card that is not a catalogue row.
+ *
+ * Only Luxury Furniture has a showcase. Repeating these chairs under Wellness or
+ * Accessories would file them under categories they do not belong to.
+ */
+const SHOWCASE: Record<string, Product[]> = {
+  "Luxury Furniture": [
+    ["Premium Black Leather Tantra", "/images/Component 1.png", 100],
+    ["Soft Couch with head pillow Tantra", "/images/Component 2.png", 200],
+    ["Premium Convertible cushion Tantra", "/images/Component 3.png", 250],
+    ["Red Tandra Chaise Premium Stylish Couch", "/images/Component 4.png", 100],
+  ].map(([name, image, price]) => ({
+    _id: `showcase-${image}`,
+    name: name as string,
+    category: "Luxury Furniture",
+    images: [image as string],
+    variants: [{ size: "Standard", price: price as number }],
+    starRating: 3.5,
+  })) as Product[],
 };
 
 export default function CategoryGrid() {
-  const categories = useCategories();
-  const [section, setSection] = useState(SECTION_DEFAULTS);
+  const [products, setProducts] = useState<Product[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  /** `null` until a pill is clicked — the first live category leads until then,
+   *  so there is no state to reconcile when the categories arrive. */
+  const [picked, setPicked] = useState<string | null>(null);
+  const reduce = useReducedMotion();
 
-  useEffect(() => {
-    let cancelled = false;
-    // Editable section copy — falls back to the defaults on any failure.
-    fetch(`${API_ORIGIN}/api/v1/category-section`)
-      .then((r) => r.json())
-      .then((j) => {
-        if (!cancelled && j?.data) setSection({ ...SECTION_DEFAULTS, ...j.data });
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
+  /* The studio's categories, live. `null` while loading — distinct from "none
+     created", which hides the section entirely further down. */
+  const categories = useCategories();
+  const pills = (categories ?? []).map((c) => c.name);
+
+  /* A pill the studio has since removed must not keep the grid pointed at a
+     category that no longer exists. */
+  const active = picked && pills.includes(picked) ? picked : pills[0];
+
+  const load = useCallback(async () => {
+    setFailed(false);
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/products`, { cache: "no-store" });
+      const json = await res.json();
+      if (!json?.success || !Array.isArray(json.data)) throw new Error("bad payload");
+      setProducts(json.data as Product[]);
+    } catch {
+      setFailed(true);
+      setProducts(null);
+    }
   }, []);
 
-  // Nothing published yet (or the request failed): drop the section rather than
-  // leave a heading standing over an empty grid. The id stays mounted so the
-  // "The Edit" nav link still has something to scroll to.
-  if (categories !== null && categories.length === 0) {
-    return <section id="the-edit" aria-hidden className="bg-ivory" />;
-  }
+  useEffect(() => {
+    // Fetching on mount is the external-system sync effects exist for; the
+    // compiler can't see that every setState in `load` lands after an await.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load();
+  }, [load]);
+
+  // Showcase first, then whatever the studio has filed under this category.
+  // `active` is undefined until the categories land, which matches nothing.
+  // Plain derivation: the React Compiler memoises this, and a manual useMemo
+  // over a value derived from the fetched list is one it has to bail out on.
+  const shown = active
+    ? [
+        ...(SHOWCASE[active] ?? []),
+        ...(products ?? []).filter((p) => p.category === active),
+      ].slice(0, VISIBLE)
+    : [];
+
+  // Only a genuinely empty grid waits. The showcase is local, so a category it
+  // covers paints immediately instead of flashing skeletons for a request whose
+  // result it does not need.
+  const loading = (categories === null || products === null) && !failed && shown.length === 0;
+
+  /* No categories saved means no section — a black band headed "Categories"
+     with an empty rail under it is worse than no band at all. `null` is still
+     loading and must not trip this. Same rule /the-edit's tiles follow. */
+  if (categories !== null && pills.length === 0) return null;
 
   return (
-    <section id="the-edit" className="bg-ivory">
-      <div className="max-w-[1500px] mx-auto px-6 sm:px-10 lg:px-16 section-pad">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6 mb-12">
-          <div>
-            <p className="eyebrow text-bronze-deep mb-4">{section.eyebrow}</p>
-            <h2 className="font-display font-light leading-[1.08] text-[clamp(2rem,4.5vw,3.5rem)] text-black max-w-2xl">
-              {section.heading}
-            </h2>
-          </div>
-          <Link
-            href={section.shopHref || "/products"}
-            className="eyebrow text-black link-underline self-start sm:self-auto shrink-0"
+    /* Full-bleed: the panel runs to both viewport edges rather than sitting in
+       an ivory gutter, so the black reads as the page rather than as a card on
+       it. The radius stays on all four corners — the thin ivory band above and
+       below is what lets the curve show. Losing the outer inset also hands the
+       grid ~180px of width back, which is where the roomier cards come from. */
+    <section id="categories" className="bg-ivory py-3 sm:py-6">
+      <div className="surface-dark w-full rounded-[24px] bg-onyx px-5 py-10 sm:rounded-[48px] sm:px-10 sm:py-12 lg:px-[clamp(2.5rem,5vw,5rem)] lg:py-[56px]">
+        <div className="mx-auto max-w-[1720px]">
+        <Reveal>
+          <h2 className="display-section text-ink">Categories</h2>
+          <p className="mt-3 max-w-[52ch] text-body text-muted">
+            Explore comfort designed for every kind of moment.
+          </p>
+        </Reveal>
+
+        {/* Filter bar. Scrolls horizontally on narrow screens rather than
+            wrapping to a second row, which would shift the grid down. */}
+        <Reveal delay={0.08}>
+          <div
+            role="tablist"
+            aria-label="Product categories"
+            className="hide-scrollbar mt-6 -mr-5 flex gap-3 overflow-x-auto pb-1 pr-5 sm:mt-8 sm:flex-wrap sm:gap-4 sm:overflow-visible sm:pr-0"
           >
-            {section.shopLabel} →
-          </Link>
+            {pills.map((pill) => {
+              const isActive = pill === active;
+              return (
+                <button
+                  key={pill}
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => setPicked(pill)}
+                  className={`relative shrink-0 rounded-full px-6 py-3.5 font-sans text-[15px] font-medium
+                    transition-colors duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] sm:px-7 sm:text-[16px] ${
+                      isActive
+                        ? "text-white"
+                        : "border border-white/35 text-white hover:border-white/70 hover:bg-white/5"
+                    }`}
+                >
+                  {/* The coral fill is one shared element that flies between
+                      pills — framer matches it by layoutId and interpolates the
+                      box, which is the morph the brief describes.
+
+                      Layered with z-0/z-10 rather than a negative index: the
+                      surrounding Reveal is a transformed element, so it opens a
+                      stacking context and a `-z-10` child disappears behind it
+                      entirely. */}
+                  {isActive && (
+                    <motion.span
+                      layoutId="category-pill"
+                      aria-hidden
+                      transition={
+                        reduce
+                          ? { duration: 0 }
+                          : { type: "spring", stiffness: 420, damping: 34 }
+                      }
+                      className="absolute inset-0 z-0 rounded-full bg-brand"
+                    />
+                  )}
+                  <span className="relative z-10">{pill}</span>
+                </button>
+              );
+            })}
+          </div>
+        </Reveal>
+
+        <div className="mt-6 sm:mt-8">
+          {loading ? (
+            <SkeletonGrid count={VISIBLE} imageRatio="aspect-[16/10] sm:aspect-[4/3]" />
+          ) : failed ? (
+            <ErrorState message="We couldn’t load the collection just now." onRetry={load} />
+          ) : shown.length === 0 ? (
+            <EmptyState
+              title="Nothing here yet"
+              message={`No pieces are filed under ${active} at the moment. Try another category, or browse the full catalogue.`}
+              action={
+                <ButtonLink href="/products" variant="solid" size="sm">
+                  Browse everything
+                </ButtonLink>
+              }
+            />
+          ) : (
+            /* CSS entrance rather than framer: a motion element server-renders
+               at opacity:0 and stays invisible until hydration, which blanked
+               this whole grid during development. The keyframe is neutralised by
+               the reduced-motion query in globals.css, and `key` on the wrapper
+               restarts the cascade when the category changes. */
+            <div
+              key={active}
+              className="grid grid-cols-1 gap-5 min-[420px]:grid-cols-2 lg:grid-cols-4 lg:gap-6"
+            >
+              {shown.map((p, i) => (
+                <div
+                  key={p._id}
+                  className="animate-[heroRise_0.7s_cubic-bezier(0.16,1,0.3,1)_both]"
+                  style={{ animationDelay: `${i * 100}ms` }}
+                >
+                  <ProductCard
+                    product={p}
+                    imageRatio="aspect-[16/10] sm:aspect-[4/3]"
+                    href={p._id.startsWith("showcase-") ? "/products" : undefined}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* One horizontal band of cards: 2 up on phones, 3 on tablets, 6 across
-            on desktop. The gap is uniform in both axes, so a set that wraps (the
-            studio can publish up to 8) keeps the same rhythm between rows as
-            between columns rather than opening a wider trough. */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4 lg:gap-5">
-          {categories === null
-            ? Array.from({ length: 6 }).map((_, i) => <TileSkeleton key={i} />)
-            : categories.map((category, i) => (
-                <Tile key={category.id} category={category} index={i} />
-              ))}
+        <Reveal delay={0.12}>
+          <div className="mt-9 flex flex-col items-center gap-6 sm:mt-10 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-center font-sans text-[16px] text-muted sm:text-left">
+              Explore 1,000+ pieces crafted for timeless luxury.
+            </p>
+            <MagneticCta
+              href="/products"
+              label="View full catalog"
+              variant="pill"
+              disabled={!!reduce}
+              className="w-full sm:w-auto"
+            />
+          </div>
+        </Reveal>
         </div>
       </div>
     </section>

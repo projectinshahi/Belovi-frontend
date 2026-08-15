@@ -1,23 +1,55 @@
 "use client";
 
-import { useState, useEffect, Suspense, useMemo } from "react";
+import { useState, useEffect, Suspense, useMemo, useCallback } from "react";
 import axios from "axios";
 import { useSearchParams } from "next/navigation";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { SlidersHorizontal, X } from "lucide-react";
 import ProductCard from "../ui/ProductCard";
+import Pagination from "../ui/Pagination";
 import Reveal from "../ui/Reveal";
 import { Button } from "../ui/Button";
+import { Skeleton } from "../ui/States";
 import Breadcrumbs from "../common/Breadcrumbs";
-import { type Product, fromPrice } from "../../lib/product";
-import { slugify, SHOP_CATEGORY_LINKS } from "../../lib/categories";
+import CollectionBanner from "./CollectionBanner";
+import FilterSidebar, { type Facet, type FilterGroupSpec } from "./FilterSidebar";
+import {
+  type Product,
+  fromPrice,
+  productColors,
+  colorSwatch,
+  collectionImage,
+  inPriceBand,
+  PRICE_BANDS,
+  FIGMA_MATERIALS,
+  FIGMA_COLORS,
+} from "../../lib/product";
+import { slugify, useCategories } from "../../lib/categories";
+
+/**
+ * The collection page — rebuilt to the Figma frame (node 58:1183).
+ *
+ * A photographic banner over a light body: a sticky white filter card on the
+ * left, and on the right a toolbar, the active-filter pills, a three-up grid of
+ * product cards and a pager. It inverts the About page's surface deliberately —
+ * both pages open with the same banner construction and use the same tokens, so
+ * black and light read as one system rather than two.
+ *
+ * The four THE EDIT pages render this same component scoped to their section, so
+ * everything below has to behave with `scope` set as well as without it.
+ */
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 const SORT_OPTIONS = [
-  { id: "popularity", label: "Featured" },
+  { id: "popularity", label: "Default Sorting" },
   { id: "price-asc", label: "Price: Low to High" },
   { id: "price-desc", label: "Price: High to Low" },
+  { id: "newest", label: "Newest First" },
 ];
+
+/** Figma lays out four rows of three. */
+const PAGE_SIZE = 12;
 
 const prettify = (slug: string) =>
   slug
@@ -35,6 +67,13 @@ const prettify = (slug: string) =>
 export interface BrowserScope {
   sectionSlugs: string[];
   modeSlugs: string[];
+  /**
+   * An explicit, hand-curated set of pieces — a Featured Collection card's own
+   * list. When present it REPLACES the slug matching rather than adding to it:
+   * the studio picked these by hand, so inferring extra members from a shared
+   * category would put pieces in a collection nobody chose to put there.
+   */
+  productIds?: string[];
 }
 
 interface ProductBrowserProps {
@@ -44,176 +83,127 @@ interface ProductBrowserProps {
   heading?: { eyebrow: string; title: string; description?: string };
 }
 
-// ─── Filter panel ─────────────────────────────────────────────────────────────
+/**
+ * Build a facet list from a FIXED baseline (the options Figma draws) unioned
+ * with whatever the catalogue actually carries.
+ *
+ * Both halves matter. Without the baseline the panel would be whatever five
+ * products happen to be loaded, and would not match the design. Without the
+ * union, a fabric the studio types into a new product would be unreachable —
+ * filed under something no checkbox can select. Options nothing matches survive
+ * at a count of zero and the sidebar renders them disabled.
+ */
+function unionFacets(
+  baseline: string[],
+  fromCatalogue: string[],
+  countFor: (id: string) => number,
+  swatchFor?: (label: string) => string
+): Facet[] {
+  const byId = new Map<string, Facet>();
 
-/** One checkable option in a filter group. */
-interface Facet {
-  id: string;
-  label: string;
-  count: number;
-}
-
-interface FilterPanelProps {
-  categories: Facet[];
-  materials: Facet[];
-  selectedCategories: string[];
-  selectedMaterials: string[];
-  onToggleCategory: (id: string) => void;
-  onToggleMaterial: (id: string) => void;
-}
-
-/** One titled group of checkboxes. Both filter groups render identically. */
-function FilterGroup({
-  title,
-  options,
-  selected,
-  onToggle,
-  empty,
-}: {
-  title: string;
-  options: Facet[];
-  selected: string[];
-  onToggle: (id: string) => void;
-  /** Shown when there are no options; omit to hide the group entirely. */
-  empty?: string;
-}) {
-  if (options.length === 0 && !empty) return null;
-
-  return (
-    <div>
-      <p className="eyebrow text-bronze-deep pb-4 mb-4 border-b border-line">{title}</p>
-      <div className="flex flex-col gap-3.5">
-        {options.length === 0 && <p className="font-sans text-sm text-faint">{empty}</p>}
-        {options.map((opt) => (
-          <label key={opt.id} className="flex items-center gap-3 cursor-pointer group">
-            <input
-              type="checkbox"
-              checked={selected.includes(opt.id)}
-              onChange={() => onToggle(opt.id)}
-              className="h-3.5 w-3.5 accent-forest cursor-pointer"
-            />
-            <span className="font-sans text-sm text-muted group-hover:text-ink transition-colors">
-              {opt.label} <span className="text-faint">({opt.count})</span>
-            </span>
-          </label>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function FilterPanel({
-  categories,
-  materials,
-  selectedCategories,
-  selectedMaterials,
-  onToggleCategory,
-  onToggleMaterial,
-}: FilterPanelProps) {
-  return (
-    <div className="space-y-10">
-      <FilterGroup
-        title="Category"
-        options={categories}
-        selected={selectedCategories}
-        onToggle={onToggleCategory}
-        empty="No categories yet."
-      />
-
-      {/* Materials come from the pieces themselves, so an untagged catalogue
-          shows no group at all rather than an empty heading. */}
-      <FilterGroup
-        title="Material"
-        options={materials}
-        selected={selectedMaterials}
-        onToggle={onToggleMaterial}
-      />
-    </div>
-  );
+  for (const label of baseline) {
+    const id = slugify(label);
+    if (id) byId.set(id, { id, label, count: countFor(id), swatch: swatchFor?.(label) });
+  }
+  for (const raw of fromCatalogue) {
+    const label = (raw || "").trim();
+    const id = slugify(label);
+    if (!id || byId.has(id)) continue;
+    byId.set(id, {
+      id,
+      // Studio values arrive lowercased from the variant field; title-case them
+      // so "ivory" doesn't sit beside "Leather" looking like a mistake.
+      label: label.charAt(0).toUpperCase() + label.slice(1),
+      count: countFor(id),
+      swatch: swatchFor?.(label),
+    });
+  }
+  return [...byId.values()];
 }
 
 // ─── Content ────────────────────────────────────────────────────────────────
 
 function BrowserContent({ scope, heading }: ProductBrowserProps) {
   const searchParams = useSearchParams();
+  const reduce = useReducedMotion();
+
   const initialCategory = searchParams.get("category") || "";
   const initialSearch = searchParams.get("search") || "";
-
   const modeParam = searchParams.get("mode") || "";
   const collectionParam = searchParams.get("collection") || "";
   const modeSlug = slugify(modeParam);
   const collectionSlug = slugify(collectionParam);
 
   const [products, setProducts] = useState<Product[]>([]);
+  /** The studio's saved categories — seeds the Category filter. */
+  const storeCategories = useCategories() ?? [];
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
 
   const [selectedCategories, setSelectedCategories] = useState<string[]>(
     initialCategory ? [initialCategory] : []
   );
+  const [selectedPrices, setSelectedPrices] = useState<string[]>([]);
   const [selectedMaterials, setSelectedMaterials] = useState<string[]>([]);
+  const [selectedColors, setSelectedColors] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState(initialSearch);
   const [sortBy, setSortBy] = useState("popularity");
   const [drawerOpen, setDrawerOpen] = useState(false);
-  // Admin-editable description for this fixed edit section (null until loaded).
+  const [page, setPage] = useState(1);
   const [editDesc, setEditDesc] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        setLoading(true);
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL
-          ? process.env.NEXT_PUBLIC_API_URL.replace("/api", "")
-          : "http://localhost:5000";
+  const apiOrigin = () =>
+    (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000").replace(/\/api\/?$/, "");
 
-        const prodRes = await axios.get(`${baseUrl}/api/v1/products`);
-        const prodJson = prodRes.data;
+  /**
+   * No state is written before the first `await` — `loading` already starts
+   * true, so the mount path has nothing to set. That keeps the effect below
+   * free of a synchronous setState, which would otherwise cascade a second
+   * render before the request has even left.
+   */
+  const fetchProducts = useCallback(async () => {
+    try {
+      const res = await axios.get(`${apiOrigin()}/api/v1/products`);
+      const json = res.data;
+      if (!json?.success || !Array.isArray(json.data)) throw new Error("bad payload");
 
-        if (prodJson?.success && Array.isArray(prodJson.data)) {
-          const mappedProds: Product[] = prodJson.data.map((p: any) => ({
-            _id: p._id,
-            name: p.name,
-            images: p.images && p.images.length > 0 ? p.images : ["/products/suncream-1.jpg"],
-            variants: p.variants,
-            offerText: p.offerText || "",
-            category: p.category || "",
-            garmentType: p.garmentType,
-            collectionName: p.collectionName,
-            season: p.season,
-            lifeMode: p.lifeMode,
-            editSection: p.editSection,
-            limited: p.limited,
-            materials: Array.isArray(p.materials) ? p.materials : [],
-            description: p.keyFeatures || p.description || "",
-            createdAt: p.createdAt,
-          }));
-          setProducts(mappedProds);
-        }
-      } catch (error) {
-        console.error("Failed to fetch products:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchProducts();
+      setProducts(
+        json.data.map((p: Record<string, unknown>) => ({
+          ...p,
+          materials: Array.isArray(p.materials) ? p.materials : [],
+          description: p.keyFeatures || p.description || "",
+        })) as Product[]
+      );
+      setFailed(false);
+    } catch {
+      /* An unreachable studio is not an empty catalogue, and rendering it as one
+         tells the shopper we sell nothing. The grid shows a retry instead. */
+      setFailed(true);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  /** The retry path is the only one that has to put the grid back into loading. */
+  const retry = () => {
+    setLoading(true);
+    void fetchProducts();
+  };
+
+  useEffect(() => {
+    void fetchProducts();
+  }, [fetchProducts]);
 
   // Fixed edit sections carry an admin-editable description, keyed by section
   // slug. An empty value hides the description (the header guards on it).
   useEffect(() => {
     if (!scope) return;
-    const KEY: Record<string, string> = {
-      within: "within",
-      beyond: "beyond",
-      "furniture": "furniture",
-      archive: "archive",
-    };
-    const key = KEY[scope.sectionSlugs[0]];
+    const key = ["within", "beyond", "furniture", "archive"].find(
+      (k) => k === scope.sectionSlugs[0]
+    );
     if (!key) return;
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL
-      ? process.env.NEXT_PUBLIC_API_URL.replace("/api", "")
-      : "http://localhost:5000";
     axios
-      .get(`${baseUrl}/api/v1/edit-sections`)
+      .get(`${apiOrigin()}/api/v1/edit-sections`)
       .then((r) => {
         if (r.data?.success) setEditDesc(r.data.data[key] ?? "");
       })
@@ -233,6 +223,17 @@ function BrowserContent({ scope, heading }: ProductBrowserProps) {
   // like the shop but over its own slice of the catalogue.
   const scoped = useMemo(() => {
     if (!scope) return products;
+
+    /* A curated list keeps the studio's order rather than the catalogue's, so
+       the listing opens arranged the way the collection was composed. The sort
+       control still overrides it — this is only the order it arrives in. */
+    if (scope.productIds) {
+      const rank = new Map(scope.productIds.map((id, i) => [id, i]));
+      return products
+        .filter((p) => rank.has(p._id))
+        .sort((a, b) => rank.get(a._id)! - rank.get(b._id)!);
+    }
+
     const sections = scope.sectionSlugs.map(slugify);
     const modes = scope.modeSlugs.map(slugify);
     return products.filter((p) => {
@@ -244,74 +245,55 @@ function BrowserContent({ scope, heading }: ProductBrowserProps) {
     });
   }, [products, scope]);
 
-  const toggleCategory = (id: string) =>
-    setSelectedCategories((prev) =>
-      prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]
-    );
+  // ── Facets ────────────────────────────────────────────────────────────────
 
-  const toggleMaterial = (id: string) =>
-    setSelectedMaterials((prev) =>
-      prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]
-    );
+  /* Plain derivation, not a useMemo: `storeCategories` arrives from a fetch, and
+     a dependency array that missed it would freeze the filter on the empty list
+     it was built with. The React Compiler memoises this. */
+  const categoryFacets = unionFacets(
+    // The studio's saved categories lead, so the filter offers them even before
+    // a piece is filed under one; anything a piece actually carries is unioned
+    // in after, so no product becomes unfilterable.
+    storeCategories.map((c) => c.name),
+    scoped.map((p) => p.category || ""),
+    (id) => scoped.filter((p) => slugify(p.category) === id).length
+  )
+    // On an edit page, hide categories with nothing in this section — the whole
+    // panel would otherwise be greyed out on a narrow slice.
+    .filter((c) => (scope ? c.count > 0 : true));
 
-  /**
-   * The five fixed categories first, always in the same order whatever the
-   * catalogue holds — so the filter list and the Shop menu agree by construction
-   * — then any studio category (Category Management) that pieces are actually
-   * filed under. Without that tail, a piece filed under a studio category would
-   * be unreachable from the filter panel even though the homepage tile links to
-   * it. Studio categories with nothing in them are left out rather than shown at
-   * zero, since they are not a fixed part of the shop's shape.
-   */
-  const categoriesWithCounts = useMemo(() => {
-    const countFor = (id: string) =>
-      scoped.filter((p) => slugify(p.category) === id).length;
+  const priceFacets = useMemo<Facet[]>(
+    () =>
+      PRICE_BANDS.map((b) => ({
+        id: b.id,
+        label: b.label,
+        count: scoped.filter((p) => inPriceBand(fromPrice(p), b)).length,
+      })),
+    [scoped]
+  );
 
-    const fixed = SHOP_CATEGORY_LINKS.map((c) => ({
-      id: c.id,
-      label: c.name,
-      count: countFor(c.id),
-    }));
+  const materialFacets = useMemo(
+    () =>
+      unionFacets(
+        FIGMA_MATERIALS,
+        scoped.flatMap((p) => p.materials || []),
+        (id) => scoped.filter((p) => (p.materials || []).some((m) => slugify(m) === id)).length
+      ),
+    [scoped]
+  );
 
-    const fixedIds = new Set(fixed.map((c) => c.id));
-    const studio = new Map<string, Facet>();
-    for (const p of scoped) {
-      const label = (p.category || "").trim();
-      const id = slugify(label);
-      if (!id || fixedIds.has(id) || studio.has(id)) continue;
-      studio.set(id, { id, label, count: countFor(id) });
-    }
+  const colorFacets = useMemo(
+    () =>
+      unionFacets(
+        FIGMA_COLORS.map((c) => c.name),
+        scoped.flatMap(productColors),
+        (id) => scoped.filter((p) => productColors(p).some((c) => slugify(c) === id)).length,
+        colorSwatch
+      ),
+    [scoped]
+  );
 
-    return [...fixed, ...[...studio.values()].sort((a, b) => a.label.localeCompare(b.label))]
-      // On an edit page, hide categories with nothing in this section.
-      .filter((c) => (scope ? c.count > 0 : true));
-  }, [scoped, scope]);
-
-  /**
-   * Material options, built from the pieces in view rather than a fixed list —
-   * a fabric the studio types into a product becomes a filter option with no
-   * code change, and one that stops being used disappears on its own.
-   *
-   * Keyed by slug so "Cotton", "cotton" and "COTTON" collapse into one option;
-   * the label shown is whichever spelling was seen first. A piece is counted
-   * once per option even if it carries the same fabric twice.
-   */
-  const materialFacets = useMemo(() => {
-    const byId = new Map<string, Facet>();
-    for (const p of scoped) {
-      const counted = new Set<string>();
-      for (const raw of p.materials || []) {
-        const label = (raw || "").trim();
-        const id = slugify(label);
-        if (!id || counted.has(id)) continue;
-        counted.add(id);
-        const existing = byId.get(id);
-        if (existing) existing.count += 1;
-        else byId.set(id, { id, label, count: 1 });
-      }
-    }
-    return [...byId.values()].sort((a, b) => a.label.localeCompare(b.label));
-  }, [scoped]);
+  // ── Filtering ─────────────────────────────────────────────────────────────
 
   const anyHasLifeMode = useMemo(() => scoped.some((p) => !!p.lifeMode), [scoped]);
   const anyHasCollection = useMemo(
@@ -320,14 +302,21 @@ function BrowserContent({ scope, heading }: ProductBrowserProps) {
   );
 
   const filtered = useMemo(() => {
+    const bands = PRICE_BANDS.filter((b) => selectedPrices.includes(b.id));
+
     const result = scoped.filter((p) => {
       const catOk =
-        selectedCategories.length === 0 ||
-        selectedCategories.includes(slugify(p.category));
+        selectedCategories.length === 0 || selectedCategories.includes(slugify(p.category));
+
+      const priceOk = bands.length === 0 || bands.some((b) => inPriceBand(fromPrice(p), b));
 
       const materialOk =
         selectedMaterials.length === 0 ||
         (p.materials || []).some((m) => selectedMaterials.includes(slugify(m)));
+
+      const colorOk =
+        selectedColors.length === 0 ||
+        productColors(p).some((c) => selectedColors.includes(slugify(c)));
 
       const searchOk =
         searchTerm === "" ||
@@ -343,7 +332,7 @@ function BrowserContent({ scope, heading }: ProductBrowserProps) {
         slugify(p.collectionName) === collectionSlug ||
         slugify(p.season) === collectionSlug;
 
-      return catOk && materialOk && searchOk && modeOk && collectionOk;
+      return catOk && priceOk && materialOk && colorOk && searchOk && modeOk && collectionOk;
     });
 
     switch (sortBy) {
@@ -351,13 +340,19 @@ function BrowserContent({ scope, heading }: ProductBrowserProps) {
         return [...result].sort((a, b) => fromPrice(a) - fromPrice(b));
       case "price-desc":
         return [...result].sort((a, b) => fromPrice(b) - fromPrice(a));
+      case "newest":
+        return [...result].sort((a, b) =>
+          (b.createdAt || "").localeCompare(a.createdAt || "")
+        );
       default:
         return result;
     }
   }, [
     scoped,
     selectedCategories,
+    selectedPrices,
     selectedMaterials,
+    selectedColors,
     searchTerm,
     sortBy,
     modeSlug,
@@ -366,6 +361,82 @@ function BrowserContent({ scope, heading }: ProductBrowserProps) {
     anyHasCollection,
     scope,
   ]);
+
+  // ── Paging ────────────────────────────────────────────────────────────────
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+
+  /* Narrowing the results while on page 4 would otherwise leave the shopper on
+     an empty page with no indication why. Clamped during RENDER rather than in
+     an effect: an effect would paint the empty page first and correct it on the
+     next frame, which is the flicker it is meant to prevent. */
+  const safePage = Math.min(page, totalPages);
+  const start = (safePage - 1) * PAGE_SIZE;
+  const pageItems = filtered.slice(start, start + PAGE_SIZE);
+
+  const goToPage = (next: number) => {
+    setPage(next);
+    window.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
+  };
+
+  // ── Active filters ────────────────────────────────────────────────────────
+
+  const toggleIn =
+    (setter: React.Dispatch<React.SetStateAction<string[]>>) => (id: string) => {
+      setter((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+      setPage(1);
+    };
+
+  const groups: FilterGroupSpec[] = [
+    {
+      key: "category",
+      title: "Categories",
+      options: categoryFacets,
+      selected: selectedCategories,
+      onToggle: toggleIn(setSelectedCategories),
+    },
+    {
+      key: "price",
+      title: "Price",
+      options: priceFacets,
+      selected: selectedPrices,
+      onToggle: toggleIn(setSelectedPrices),
+    },
+    {
+      key: "material",
+      title: "Material",
+      options: materialFacets,
+      selected: selectedMaterials,
+      onToggle: toggleIn(setSelectedMaterials),
+    },
+    {
+      key: "color",
+      title: "Color",
+      options: colorFacets,
+      selected: selectedColors,
+      onToggle: toggleIn(setSelectedColors),
+    },
+  ];
+
+  /** Every ticked box, flattened into the pill row, each able to remove itself. */
+  const activePills = groups.flatMap((g) =>
+    g.selected.map((id) => ({
+      key: `${g.key}:${id}`,
+      label: g.options.find((o) => o.id === id)?.label ?? prettify(id),
+      remove: () => g.onToggle(id),
+    }))
+  );
+
+  const clearAll = () => {
+    setSelectedCategories([]);
+    setSelectedPrices([]);
+    setSelectedMaterials([]);
+    setSelectedColors([]);
+    setSearchTerm("");
+    setPage(1);
+  };
+
+  // ── Chrome ────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => e.key === "Escape" && setDrawerOpen(false);
@@ -380,192 +451,272 @@ function BrowserContent({ scope, heading }: ProductBrowserProps) {
     };
   }, [drawerOpen]);
 
-  // Header: edit pages pass a fixed heading; the shop derives one from filters.
-  const derived = useMemo(() => {
-    if (searchTerm) return { eyebrow: "The Edit · Search", title: searchTerm };
-    if (modeSlug) return { eyebrow: "The Edit · Life Mode", title: prettify(modeParam) };
-    if (collectionSlug)
-      return { eyebrow: "The Edit · Collection", title: prettify(collectionParam) };
+  /* Header: edit pages pass a fixed heading; the shop derives one from filters.
+     Plain derivation for the same reason as `categoryFacets` above — it reads
+     that value, which is now itself derived from a fetch. */
+  const derived = (() => {
+    if (searchTerm) return { eyebrow: "Search", title: searchTerm };
+    if (modeSlug) return { eyebrow: "Life Mode", title: prettify(modeParam) };
+    if (collectionSlug) return { eyebrow: "Collection", title: prettify(collectionParam) };
     if (selectedCategories.length === 1) {
-      const cat = categoriesWithCounts.find((c) => c.id === selectedCategories[0]);
-      return {
-        eyebrow: "The Edit · Category",
-        title: cat ? cat.label : prettify(selectedCategories[0]),
-      };
+      const cat = categoryFacets.find((c) => c.id === selectedCategories[0]);
+      return { eyebrow: "Category", title: cat ? cat.label : prettify(selectedCategories[0]) };
     }
-    return { eyebrow: "The Edit · Shop All", title: "Shop All" };
-  }, [
-    searchTerm,
-    modeSlug,
-    modeParam,
-    collectionSlug,
-    collectionParam,
-    selectedCategories,
-    categoriesWithCounts,
-  ]);
+    return { eyebrow: "Collections", title: "Explore the Collection" };
+  })();
 
-  const { eyebrow, title } = heading ?? derived;
-  // Admin description wins once loaded (empty = hidden); else the page's default.
-  const description = editDesc !== null ? editDesc : heading?.description;
+  const { title } = heading ?? derived;
+  const description =
+    editDesc !== null
+      ? editDesc
+      : heading?.description ??
+        "Discover thoughtfully curated furniture where timeless design, exceptional comfort, and modern luxury come together.";
 
-  const panelProps: FilterPanelProps = {
-    categories: categoriesWithCounts,
-    materials: materialFacets,
-    selectedCategories,
-    selectedMaterials,
-    onToggleCategory: toggleCategory,
-    onToggleMaterial: toggleMaterial,
-  };
-
-  const countLabel = `${filtered.length} ${filtered.length === 1 ? "piece" : "pieces"}`;
+  const showingLabel = loading
+    ? "Loading the collection…"
+    : filtered.length === 0
+      ? "No results"
+      : `Showing ${start + 1} - ${Math.min(start + PAGE_SIZE, filtered.length)} of ${filtered.length} results`;
 
   return (
-    <div className="min-h-screen bg-ivory pt-[68px] lg:pt-[84px]">
-      {/* Header band */}
-      <div className="max-w-[1500px] mx-auto px-6 sm:px-10 lg:px-16">
-        <Breadcrumbs className="pt-8" />
-        <header className="pt-6 lg:pt-8 pb-8 lg:pb-10 border-b border-line">
-          <p className="eyebrow text-bronze-deep">{eyebrow}</p>
-          <h1 className="font-display font-light text-[clamp(2rem,4.5vw,3.5rem)] leading-[1.08] text-ink mt-4">
-            {title}
-          </h1>
-          {description && (
-            <p className="font-sans text-[15px] leading-relaxed text-muted mt-5 max-w-2xl">
-              {description}
-            </p>
-          )}
-          <p className="font-sans text-sm text-muted mt-4">
-            {loading ? "Loading the edit…" : countLabel}
-          </p>
-        </header>
-      </div>
+    <main className="surface-light min-h-screen bg-ivory">
+      <CollectionBanner title={title} description={description} />
 
-      {/* Body */}
-      <div className="max-w-[1500px] mx-auto px-6 sm:px-10 lg:px-16 pb-24">
-        <div className="flex gap-10 lg:gap-14">
-          {/* Desktop filters */}
-          <aside className="hidden lg:block w-60 xl:w-64 shrink-0">
-            <div className="sticky top-[104px] pt-10">
-              <FilterPanel {...panelProps} />
+      <div className="section-x section-inner pb-20 pt-8 sm:pt-10 lg:pb-28">
+        <div className="flex gap-8 lg:gap-8">
+          {/* ── Desktop rail ─────────────────────────────────────────────── */}
+          <aside className="hidden shrink-0 lg:block lg:w-[290px] xl:w-[315px]">
+            <div className="sticky top-[126px]">
+              <FilterSidebar groups={groups} />
             </div>
           </aside>
 
-          {/* Mobile drawer */}
-          {drawerOpen && (
-            <>
-              <div
-                className="fixed inset-x-0 bottom-0 top-[68px] z-40 bg-ink/30 lg:hidden"
-                onClick={() => setDrawerOpen(false)}
-                aria-hidden="true"
-              />
-              <div className="fixed bottom-0 left-0 top-[68px] z-40 w-80 max-w-full bg-cream overflow-y-auto lg:hidden shadow-2xl">
-                <div className="flex items-center justify-between px-6 pt-6 pb-4">
-                  <span className="eyebrow text-bronze-deep">Filters</span>
+          {/* ── Mobile drawer ────────────────────────────────────────────── */}
+          <AnimatePresence>
+            {drawerOpen && (
+              <>
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="fixed inset-0 z-40 bg-ink/40 lg:hidden"
+                  onClick={() => setDrawerOpen(false)}
+                  aria-hidden
+                />
+                <motion.div
+                  initial={{ x: "-100%" }}
+                  animate={{ x: 0 }}
+                  exit={{ x: "-100%" }}
+                  transition={{ duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
+                  role="dialog"
+                  aria-label="Filters"
+                  className="surface-light fixed bottom-0 left-0 top-0 z-50 w-[85vw] max-w-[340px]
+                    overflow-y-auto bg-cream shadow-2xl lg:hidden"
+                >
+                  <div className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-cream px-6 py-5">
+                    <p className="font-sans text-[20px] font-medium text-ink">Filter Options</p>
+                    <button
+                      onClick={() => setDrawerOpen(false)}
+                      aria-label="Close filters"
+                      className="-mr-2 rounded-full p-2 text-ink transition-colors hover:bg-ink/5"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+                  <FilterSidebar groups={groups} bare className="px-6 py-6" />
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
+
+          {/* ── Main column ──────────────────────────────────────────────── */}
+          <div className="min-w-0 flex-1">
+            <Breadcrumbs />
+
+            {/* Toolbar */}
+            <div className="mt-6 flex flex-col gap-4 sm:mt-8">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p
+                  aria-live="polite"
+                  className="font-sans text-[15px] text-muted sm:text-[18px] lg:text-[22px]"
+                >
+                  {showingLabel}
+                </p>
+
+                <div className="flex items-center gap-3 sm:gap-6 lg:gap-8">
                   <button
-                    onClick={() => setDrawerOpen(false)}
-                    aria-label="Close filters"
-                    className="p-2 -mr-2 rounded-full hover:bg-ink/5 text-ink transition-colors"
+                    onClick={() => setDrawerOpen(true)}
+                    className="pill-control inline-flex items-center gap-2 text-ink lg:hidden"
                   >
-                    <X size={18} />
+                    <SlidersHorizontal size={15} aria-hidden />
+                    Filters
+                    {activePills.length > 0 && (
+                      <span className="grid h-5 min-w-5 place-items-center rounded-full bg-brand px-1 font-sans text-[11px] text-white tabular-nums">
+                        {activePills.length}
+                      </span>
+                    )}
+                  </button>
+
+                  <label
+                    htmlFor="sort"
+                    className="hidden font-sans text-[18px] text-muted sm:inline lg:text-[22px]"
+                  >
+                    Sort By :
+                  </label>
+                  {/* A real <select>: the pill is chrome, the control underneath
+                      is native, so keyboard use and the mobile picker are the
+                      platform's rather than ours to rebuild. */}
+                  <div className="pill-control relative inline-flex items-center gap-3 text-muted">
+                    <select
+                      id="sort"
+                      value={sortBy}
+                      onChange={(e) => {
+                        setSortBy(e.target.value);
+                        setPage(1);
+                      }}
+                      className="peer cursor-pointer appearance-none bg-transparent pr-6 font-sans outline-none"
+                    >
+                      {SORT_OPTIONS.map((opt) => (
+                        <option key={opt.id} value={opt.id}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden
+                      className="pointer-events-none absolute right-5 h-4 w-4 transition-transform duration-300 peer-focus:rotate-180"
+                    >
+                      <path d="m6 9 6 6 6-6" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+
+              {/* Active filters */}
+              {activePills.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                  <p className="font-sans text-[15px] text-muted sm:text-[18px] lg:text-[22px]">
+                    Active Filters:
+                  </p>
+                  <AnimatePresence mode="popLayout" initial={false}>
+                    {activePills.map((pill) => (
+                      <motion.button
+                        key={pill.key}
+                        layout
+                        initial={{ opacity: 0, scale: 0.85 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.85 }}
+                        transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+                        onClick={pill.remove}
+                        aria-label={`Remove filter ${pill.label}`}
+                        className="group inline-flex items-center gap-2 rounded-full bg-brand py-2 pl-4 pr-2.5
+                          font-sans text-[14px] font-medium text-white transition-colors duration-300
+                          hover:bg-forest sm:text-[16px]"
+                      >
+                        {pill.label}
+                        <span
+                          aria-hidden
+                          className="grid h-5 w-5 place-items-center rounded-full border border-white/50
+                            transition-transform duration-300 group-hover:rotate-90"
+                        >
+                          <X size={11} strokeWidth={2.5} />
+                        </span>
+                      </motion.button>
+                    ))}
+                  </AnimatePresence>
+                  <button
+                    onClick={clearAll}
+                    className="link-underline font-sans text-[14px] text-muted transition-colors hover:text-ink"
+                  >
+                    Clear all
                   </button>
                 </div>
-                <div className="px-6 pb-10">
-                  <FilterPanel {...panelProps} />
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Main column */}
-          <main className="flex-1 min-w-0 pt-10">
-            {/* Toolbar */}
-            <div className="flex items-center justify-between gap-4 pb-8 border-b border-line">
-              <button
-                onClick={() => setDrawerOpen(true)}
-                className="lg:hidden inline-flex items-center gap-2 font-sans uppercase tracking-[0.15em] text-[11px] text-ink border border-line px-4 py-2.5 hover:border-ink transition-colors"
-              >
-                <SlidersHorizontal size={14} />
-                Filters
-              </button>
-
-              <p className="hidden lg:block font-sans text-sm text-muted">{countLabel}</p>
-
-              <div className="flex items-center gap-3">
-                <label htmlFor="sort" className="hidden sm:inline eyebrow text-faint">
-                  Sort
-                </label>
-                <select
-                  id="sort"
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value)}
-                  className="appearance-none bg-transparent border border-line text-ink font-sans uppercase tracking-[0.14em] text-[11px] px-4 py-2.5 pr-8 cursor-pointer outline-none focus:border-ink transition-colors"
-                >
-                  {SORT_OPTIONS.map((opt) => (
-                    <option key={opt.id} value={opt.id}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              )}
             </div>
 
-            {/* Active search chip */}
-            {searchTerm && (
-              <p className="font-sans text-sm text-muted mt-6">
-                Results for <span className="text-ink">&ldquo;{searchTerm}&rdquo;</span>
-                <button
-                  onClick={() => setSearchTerm("")}
-                  className="ml-3 link-underline text-bronze-deep text-xs uppercase tracking-[0.15em]"
-                >
-                  Clear
-                </button>
-              </p>
-            )}
-
-            {/* Grid */}
+            {/* ── Grid ───────────────────────────────────────────────────── */}
             {loading ? (
-              <div className="flex items-center justify-center py-32">
-                <div className="h-6 w-6 rounded-full border-2 border-ink/20 border-t-ink animate-spin" />
-              </div>
-            ) : filtered.length > 0 ? (
-              // 4-up from `xl`: the card runs a compact scale now, and at three
-              // columns beside the filter rail each one stretched past 370px,
-              // leaving the details block adrift in it.
-              <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5 lg:gap-6 mt-10">
-                {filtered.map((product, i) => (
-                  <Reveal key={product._id} delay={(i % 4) * 0.06}>
-                    <ProductCard product={product} />
-                  </Reveal>
+              <div className="mt-8 grid grid-cols-2 gap-4 sm:gap-5 lg:grid-cols-3 lg:gap-6">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="rounded-[20px] bg-cream p-3 sm:rounded-[24px] sm:p-4">
+                    <Skeleton className="aspect-square w-full rounded-[12px] sm:rounded-[16px]" />
+                    <Skeleton className="mt-8 h-4 w-4/5" />
+                    <Skeleton className="mt-3 h-5 w-1/3" />
+                  </div>
                 ))}
               </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center text-center py-32">
-                <p className="eyebrow text-bronze-deep">Nothing here yet</p>
-                <h3 className="font-display font-light text-3xl text-ink mt-4">
-                  No pieces match this edit
-                </h3>
-                <p className="font-sans text-sm text-muted mt-3 max-w-sm">
-                  Try loosening the filters, or clear them to browse the full collection.
+            ) : failed ? (
+              <div className="mt-10 flex flex-col items-center justify-center rounded-[24px] border border-line bg-cream/60 px-6 py-24 text-center">
+                <p className="display-card text-ink">We couldn’t load the collection</p>
+                <p className="mt-2 max-w-[46ch] text-body text-muted">
+                  The studio didn’t answer just now. It is usually a moment’s outage.
                 </p>
                 <div className="mt-8">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setSelectedCategories([]);
-                      setSelectedMaterials([]);
-                      setSearchTerm("");
-                    }}
-                  >
-                    Clear filters
+                  <Button variant="outline" size="sm" onClick={retry} arrow={false}>
+                    Try again
                   </Button>
                 </div>
               </div>
+            ) : pageItems.length > 0 ? (
+              <>
+                {/* Keyed on the page so a page change cross-fades the whole grid
+                    rather than mutating twelve cards in place. */}
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={safePage}
+                    initial={reduce ? false : { opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={reduce ? undefined : { opacity: 0, y: -12 }}
+                    transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                    className="mt-8 grid grid-cols-2 gap-4 sm:gap-5 lg:grid-cols-3 lg:gap-6"
+                  >
+                    {pageItems.map((product, i) => (
+                      <Reveal key={product._id} delay={(i % 3) * 0.07}>
+                        <ProductCard
+                          product={product}
+                          imageOverride={collectionImage(start + i)}
+                        />
+                      </Reveal>
+                    ))}
+                  </motion.div>
+                </AnimatePresence>
+
+                <Pagination
+                  page={safePage}
+                  totalPages={totalPages}
+                  onChange={goToPage}
+                  className="mt-12 lg:mt-16"
+                />
+              </>
+            ) : (
+              <div className="mt-10 flex flex-col items-center justify-center rounded-[24px] border border-dashed border-line px-6 py-24 text-center">
+                <p className="display-card text-ink">
+                  {scoped.length === 0 ? "Nothing here yet" : "No pieces match these filters"}
+                </p>
+                <p className="mt-2 max-w-[46ch] text-body text-muted">
+                  {scoped.length === 0
+                    ? "This collection is being prepared. Please look again shortly."
+                    : "Try loosening a filter, or clear them to browse the full collection."}
+                </p>
+                {activePills.length > 0 && (
+                  <div className="mt-8">
+                    <Button variant="outline" size="sm" onClick={clearAll} arrow={false}>
+                      Clear filters
+                    </Button>
+                  </div>
+                )}
+              </div>
             )}
-          </main>
+          </div>
         </div>
       </div>
-    </div>
+    </main>
   );
 }
 
@@ -575,8 +726,8 @@ export default function ProductBrowser(props: ProductBrowserProps) {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-ivory pt-[84px] flex items-center justify-center">
-          <div className="h-6 w-6 rounded-full border-2 border-ink/20 border-t-ink animate-spin" />
+        <div className="surface-light flex min-h-screen items-center justify-center bg-ivory pt-[92px]">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-ink/20 border-t-ink" />
         </div>
       }
     >

@@ -21,11 +21,12 @@ import { usePathname } from "next/navigation";
  * sensibly without a code change; add an entry only to override that.
  */
 const LABELS: Record<string, string> = {
-  products: "The Edit",
+  // "Collections" — matching the nav item and the Figma trail. The route stays
+  // /products; only the name shown to the shopper changes.
+  products: "Collections",
   "the-edit": "The Edit",
   "the-moment": "The Moment",
   about: "About Us",
-  contact: "Contact",
   cart: "Bag",
   checkout: "Checkout",
   profile: "Account",
@@ -99,21 +100,37 @@ export default function Breadcrumbs({
 
   if (currentLabel) crumbs[crumbs.length - 1].label = currentLabel;
 
+  // Figma sets the trail at body scale with a chevron separator and the current
+  // page picked out in brand red — not the tracked 11px caps this used to be.
+  // The red is the only colour on the row, so it reads as "you are here" rather
+  // than as a link.
   return (
     <nav
       aria-label="Breadcrumb"
-      className={`flex items-center flex-wrap gap-x-2 gap-y-1 font-sans text-[11px] tracking-[0.12em] text-faint ${className}`}
+      className={`flex flex-wrap items-center gap-2 font-sans text-[14px] text-faint ${className}`}
     >
       <Link href="/" className={linkClass}>
         Home
       </Link>
       {crumbs.map((crumb) => (
-        <span key={crumb.href} className="flex items-center gap-2 min-w-0">
-          <span aria-hidden className="text-faint/60">
-            /
-          </span>
+        <span key={crumb.href} className="flex min-w-0 items-center gap-2">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+            className="h-3 w-3 shrink-0 text-faint"
+          >
+            <path d="m9 5 7 7-7 7" />
+          </svg>
           {crumb.isLast ? (
-            <span aria-current="page" className="text-muted truncate max-w-[60vw] sm:max-w-none">
+            <span
+              aria-current="page"
+              className="max-w-[60vw] truncate text-brand sm:max-w-none"
+            >
               {crumb.label}
             </span>
           ) : (

@@ -4,23 +4,23 @@ import axios from "axios";
 import { useEffect, useState } from "react";
 
 /**
- * Categories, as the storefront consumes them. There are two sets, deliberately
- * independent of each other:
+ * Categories, as the storefront consumes them.
  *
- * 1. `SHOP_CATEGORIES` — the Shop menu's fixed list. Drives the Shop dropdown,
- *    the footer's Collections column, the homepage search chips and the shop's
- *    Category filter. Closed: it lives here and nowhere else, and nothing in the
- *    admin can change it.
+ * THERE IS NO LIST IN THIS FILE. Every category the storefront shows — the Shop
+ * dropdown, the homepage Category Section, the search chips, /the-edit's tiles,
+ * the shop's Category filter — is a document the studio created in the admin's
+ * Category Management. Create one and it appears everywhere; deactivate or
+ * delete it and it leaves. No deploy either way.
  *
- * 2. `useCategories()` — the categories the studio creates in the admin's
- *    Category Management. They illustrate the homepage grid and /the-edit, and
- *    they are what a product is actually filed under (the admin's product form
- *    reads the same set, and the backend's Product model enforces it).
+ * This file used to also carry a hardcoded list of five names that the menus
+ * rendered directly. That was the bug behind "categories added in the admin
+ * don't show up": the storefront read the constant while the admin wrote to the
+ * database, and the two had no reason to agree. The constant is gone, so there
+ * is exactly one source of truth and it is the database.
  *
- * NOTE: because a piece carries a category from set 2 while the Shop menu links
- * to set 1, a Shop menu link only lands on pieces when the same name exists in
- * both — i.e. when the studio has created a category named "Wellness" et al. in
- * Category Management. Names that exist in only one set filter to nothing.
+ * The consequence is deliberate and worth stating: with no categories saved, the
+ * storefront shows no categories. Each surface below hides its own section
+ * rather than rendering an empty shell.
  */
 
 /** Backend origin, tolerating a NEXT_PUBLIC_API_URL that includes `/api`. */
@@ -44,36 +44,6 @@ export const slugify = (s?: string) =>
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
 
-// ─── 1. The Shop menu's fixed list ───────────────────────────────────────────
-
-/**
- * The five fixed categories, in menu order. A piece is filed under exactly one
- * of these; mirrored by `SHOP_CATEGORIES` in the backend's Product model (the
- * enum that enforces it) and in the admin's products/_components/types.ts, which
- * drives the product form's dropdown. `check-categories.mjs` asserts the three
- * copies agree.
- *
- * "All Products" is one of the five because the studio asked for it as a filing
- * option. Note it is a category like any other here: `?category=all-products`
- * shows the pieces filed under that name, not the whole catalogue. The
- * unfiltered shop is the "Shop" nav item itself, which links to `/products`.
- */
-export const SHOP_CATEGORIES = [
-  "Luxury Furniture",
-  "Positioning",
-  "Wellness",
-  "Accessories",
-  "All Products",
-];
-
-/** The same four as `{ id, name }`, ready to link and filter on. */
-export const SHOP_CATEGORY_LINKS = SHOP_CATEGORIES.map((name) => ({
-  id: slugify(name),
-  name,
-}));
-
-// ─── 2. The studio's categories, from Category Management ────────────────────
-
 export interface StoreCategory {
   /** Slug used in `/products?category=…`. */
   id: string;
@@ -82,6 +52,7 @@ export interface StoreCategory {
   image: string;
 }
 
+/** A category document as the API returns it. */
 interface ApiCategory {
   name?: string;
   image?: string;
@@ -90,25 +61,19 @@ interface ApiCategory {
 
 /**
  * Shared across every component that asks, so a page carrying both the homepage
- * grid and /the-edit tiles makes one request, not two. Cleared on failure so a
- * transient outage doesn't cache an empty grid.
+ * Category Section and the navbar makes one request, not two. Cleared on failure
+ * so a transient outage doesn't cache an empty list for the session.
  */
-let inFlight: Promise<StoreCategory[]> | null = null;
+let inFlight: Promise<ApiCategory[]> | null = null;
 
 /**
- * The studio's active categories, each with the photograph uploaded for it.
- * Never rejects: an unreachable backend yields an empty list, and both callers
- * already render nothing rather than an error for that case.
+ * Never rejects: an unreachable backend yields an empty list, and every caller
+ * hides its section rather than showing an error for that case.
  */
-function fetchCategories(): Promise<StoreCategory[]> {
+function fetchCategories(): Promise<ApiCategory[]> {
   inFlight ??= axios
     .get(`${API_ORIGIN}/api/v1/categories`)
-    .then((res) => {
-      const docs: ApiCategory[] = Array.isArray(res.data?.data) ? res.data.data : [];
-      return docs
-        .filter((c) => c.name && c.status !== "INACTIVE")
-        .map((c) => ({ id: slugify(c.name), name: c.name as string, image: c.image || "" }));
-    })
+    .then((res) => (Array.isArray(res.data?.data) ? (res.data.data as ApiCategory[]) : []))
     .catch(() => {
       inFlight = null;
       return [];
@@ -117,21 +82,32 @@ function fetchCategories(): Promise<StoreCategory[]> {
 }
 
 /**
- * `null` while loading, so a caller can tell "not yet" from "none published"
- * and show a skeleton instead of collapsing its section.
+ * The studio's active categories, in the order the API returns them — which is
+ * the order the admin's own Categories table shows, so the two never disagree.
+ * Nothing is re-sorted here: ordering is the admin's to decide, not this file's.
+ *
+ * `null` while loading, so a caller can tell "not yet" from "none created" and
+ * show a skeleton instead of collapsing its section on the first frame.
  */
 export function useCategories(): StoreCategory[] | null {
-  const [categories, setCategories] = useState<StoreCategory[] | null>(null);
+  const [docs, setDocs] = useState<ApiCategory[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     fetchCategories().then((list) => {
-      if (!cancelled) setCategories(list);
+      if (!cancelled) setDocs(list);
     });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  return categories;
+  if (docs === null) return null;
+  return docs
+    .filter((c) => c.name && c.status !== "INACTIVE")
+    .map((c) => ({
+      id: slugify(c.name),
+      name: (c.name || "").trim(),
+      image: c.image || "",
+    }));
 }
