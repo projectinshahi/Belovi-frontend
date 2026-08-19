@@ -181,11 +181,22 @@ export default function ProductCard({
 
         {tags.length > 0 && (
           <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">
+            {/* The studio's own status badge — whatever it typed into "Status
+                Badge" in the admin — is green. `#2e7d32` is the green the In
+                Stock pill already uses, so the site keeps one green rather than
+                gaining a second; solid with white type, exactly the treatment
+                the badge already had, because a pale fill at 11px does not hold
+                up over an uncontrolled photograph.
+
+                "LIMITED PIECE" keeps its own near-black treatment: it is not the
+                status badge, it comes from the `limited` flag rather than from
+                that field, and the two must stay tellable apart when a piece
+                carries both. */}
             {tags.map((t, i) => (
               <span
                 key={i}
                 className={`rounded-full px-2.5 py-1 font-sans text-[11px] leading-tight ${
-                  t.limited ? "bg-ink text-white" : "bg-brand text-white"
+                  t.limited ? "bg-ink text-white" : "bg-[#2e7d32] text-white"
                 }`}
               >
                 {t.label}

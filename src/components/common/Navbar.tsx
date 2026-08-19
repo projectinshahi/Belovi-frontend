@@ -72,14 +72,22 @@ export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
 
-  /* Drives both the desktop dropdown and the mobile drawer's Collections list,
-     so the two can never show different categories. Empty until the studio has
-     saved a category — Collections then stays a plain link to the full shop
-     rather than opening onto nothing. */
-  const shopSubpages = (useCategories() ?? []).map((c) => ({
-    href: `/products?category=${c.id}`,
-    label: c.name,
-  }));
+  /* "All Products" leads, then the studio's categories.
+   *
+   * The menu listed only categories, so once the hardcoded "All Products"
+   * category was removed there was no route from here to the unfiltered
+   * catalogue — every entry narrowed the listing and none opened it whole.
+   * `/products` with no query is that page.
+   *
+   * One array feeds both the desktop dropdown and the mobile drawer, so this
+   * appears in every view at once and cannot drift between them. */
+  const shopSubpages = [
+    { href: "/products", label: "All Products" },
+    ...(useCategories() ?? []).map((c) => ({
+      href: `/products?category=${c.id}`,
+      label: c.name,
+    })),
+  ];
   const hasSubpages = shopSubpages.length > 0;
 
   const isActive = (id: string) => {

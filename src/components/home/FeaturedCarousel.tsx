@@ -247,7 +247,10 @@ export default function FeaturedCarousel({ data }: { data: FeaturedCollection | 
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
           onClickCapture={onClickCapture}
-          className="rail-grab hide-scrollbar mt-10 flex snap-x snap-mandatory gap-5 overflow-x-auto scroll-smooth pb-4
+          /* `pb-14`, not `pb-4`: `overflow-x-auto` makes the vertical axis
+             clip too, so the info panel hanging below each card would be cut
+             off. The padding is the room it hangs into. */
+          className="rail-grab hide-scrollbar mt-10 flex snap-x snap-mandatory gap-5 overflow-x-auto scroll-smooth pb-14
             [padding-inline:clamp(1.25rem,6.4vw,6.875rem)] [scroll-padding-inline:clamp(1.25rem,6.4vw,6.875rem)]"
         >
           {cards.map((card) => (
@@ -313,11 +316,15 @@ function FeatureCard({ card }: { card: Card }) {
       href={card.href}
       draggable={false}
       aria-label={`${card.name} — ${card.count} ${card.count === 1 ? "piece" : "pieces"}`}
-      className="group relative block w-[76vw] shrink-0 snap-start overflow-hidden rounded-[20px]
+      /* NO `overflow-hidden` here any more — the info panel has to escape this
+         box to hang below the photograph. The clipping moved inward, onto the
+         image wrapper, which is the only thing that actually needs it (to keep
+         the photograph inside the rounded corners). */
+      className="group relative block w-[76vw] shrink-0 snap-start
         transition-transform duration-[400ms] ease-[cubic-bezier(0.25,0.46,0.45,0.94)]
-        hover:-translate-y-1.5 sm:w-[44vw] sm:rounded-[28px] md:w-[30vw] lg:w-[clamp(220px,19vw,290px)]"
+        hover:-translate-y-1.5 sm:w-[44vw] md:w-[30vw] lg:w-[clamp(220px,19vw,290px)]"
     >
-      <div className="relative aspect-[4/5] w-full overflow-hidden bg-sand">
+      <div className="relative aspect-[4/5] w-full overflow-hidden rounded-[20px] bg-sand sm:rounded-[28px]">
         {/* `bg-sand` shows through when a card has no photograph yet, rather
             than a broken-image glyph. */}
         {card.image && (
@@ -346,20 +353,33 @@ function FeatureCard({ card }: { card: Card }) {
           </span>
         )}
 
-        {/* The signature element: a white panel anchored across the foot of the
-            image, rounded on top and flush with the card's bottom edge. */}
-        <div
-          className="panel-breathe absolute bottom-0 left-1/2 z-[5] w-[92%] -translate-x-1/2 rounded-t-[16px]
-            bg-cream px-4 py-4 text-center transition-transform duration-[400ms]
-            ease-[cubic-bezier(0.25,0.46,0.45,0.94)] group-hover:-translate-y-1 sm:rounded-t-[20px] sm:px-5"
-        >
-          <h3 className="font-sans text-[15px] font-medium leading-snug text-muted sm:text-[17px]">
-            {card.name}
-          </h3>
-          {card.type && (
-            <p className="mt-1 font-sans text-[16px] text-brand">{card.type}</p>
-          )}
-        </div>
+      </div>
+
+      {/* The signature element: a white panel that OVERLAPS the foot of the
+          photograph and hangs past it.
+
+          It sits outside the image wrapper now, as a sibling, so the wrapper's
+          `overflow-hidden` cannot clip it — that clipping is what previously
+          pinned it flush inside the bottom edge. Positioned against the card
+          itself and pushed down 38% of its own height, which is roughly the
+          40/60 split of outside-to-inside the reference draws, and stays right
+          at any panel height because it is a percentage of the panel rather
+          than a fixed offset.
+
+          All four corners are rounded now: it is a free-floating card, not a
+          shape butted against the bottom of another. */}
+      <div
+        className="panel-breathe absolute bottom-0 left-1/2 z-[5] w-[92%] -translate-x-1/2
+          translate-y-[38%] rounded-[16px] bg-cream px-4 py-4 text-center
+          transition-transform duration-[400ms] ease-[cubic-bezier(0.25,0.46,0.45,0.94)]
+          group-hover:translate-y-[34%] sm:rounded-[20px] sm:px-5"
+      >
+        <h3 className="font-sans text-[15px] font-medium leading-snug text-muted sm:text-[17px]">
+          {card.name}
+        </h3>
+        {card.type && (
+          <p className="mt-1 font-sans text-[16px] text-brand">{card.type}</p>
+        )}
       </div>
     </Link>
   );

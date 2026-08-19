@@ -88,23 +88,26 @@ export default function BrochureStrip() {
               delay={i * 0.15}
               y={100}
               scaleFrom={0.97}
-              /* Closed, a card is its own narrow width — NOT an equal share of
-                 the row. It used to be `flex-1`, which made three cards look
-                 right by accident and one card stretch across the full 1100px,
-                 nothing like the reference. `grow-0` fixes the closed width;
-                 hovering hands that card the row's free space, and `max-w` stops
-                 a lone card from expanding to the full width of the section. */
-              /* `shrink` is left at its default so a long row of brochures
-                 compresses to fit rather than running off the container.
+              /* THE WIDTH IS ANIMATED ON `flex-basis`, NOT `flex-grow`, and that
+                 is what removes the snap.
 
-                 700ms on the same curve as the type inside, so the card opening
-                 and the title swinging flat read as one movement rather than two
-                 that happen to start together. The curve is a long, soft
-                 deceleration — it leaves fast and settles slowly, which is what
-                 stops the expansion feeling like a snap. */
-              className="lg:max-w-[640px] lg:grow-0 lg:basis-[clamp(216px,17vw,248px)]
-                lg:transition-[flex-grow] lg:duration-[var(--brochure-dur)]
-                lg:ease-[var(--brochure-ease)] lg:hover:grow"
+                 Flexbox hands each item `grow_i / Σgrow` of the free space. With
+                 every sibling at `grow-0`, the hovered card is the only non-zero
+                 grower, so that ratio is 1 no matter how large its factor is —
+                 0.001 and 1 both claim the entire remainder. Animating
+                 `grow: 0 → 1` is therefore a STEP: the width jumps the moment the
+                 factor leaves zero, and no duration or curve can smooth it,
+                 because nothing is actually being interpolated.
+
+                 `flex-basis` is a length, so it interpolates properly and the
+                 width moves continuously across every frame. Siblings still give
+                 way — `shrink` is left at its default, so they compress to make
+                 room and the row's total width never changes. It also keeps a
+                 lone card from spanning the whole section, which is what the
+                 `max-w` cap was previously for. */
+              className="lg:grow-0 lg:basis-[clamp(216px,17vw,248px)]
+                lg:transition-[flex-basis] lg:duration-[var(--brochure-dur)]
+                lg:ease-[var(--brochure-ease)] lg:hover:basis-[640px]"
             >
               <BrochureCard card={card} />
             </Reveal>
@@ -125,7 +128,9 @@ function BrochureCard({ card }: { card: Card }) {
       download=""
       aria-label={`Download the ${card.title} brochure (PDF)`}
       className="brochure-card group relative block w-full overflow-hidden rounded-[24px]
-        transition-[transform,box-shadow] duration-[var(--brochure-dur)] ease-[var(--brochure-ease)]
+        /* `translate`, not `transform` — the lift below is `-translate-y-1.5`,
+           which Tailwind v4 compiles to the standalone `translate` property. */
+        transition-[translate,box-shadow] duration-[var(--brochure-dur)] ease-[var(--brochure-ease)]
         hover:-translate-y-1.5 hover:shadow-[0_24px_48px_rgba(0,0,0,0.15)]
         focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white
         lg:rounded-[clamp(24px,2vw,32px)] lg:hover:translate-y-0"
@@ -178,15 +183,33 @@ function BrochureCard({ card }: { card: Card }) {
           once. */}
       {/* Sized down on a phone, where it is permanently on screen and a shorter
           card leaves it competing with the caption for the same 240px. Every
-          `sm:` below restores the size the tablet and desktop already had. */}
+          `sm:` below restores the size the tablet and desktop already had.
+
+          THE TRANSITION LISTS `translate`, NOT `transform`. Tailwind v4 compiles
+          `-translate-y-*` to the standalone `translate` property, so the old
+          `transition-[opacity,transform]` covered the fade and nothing else —
+          the button's movement was never animated at all, it simply appeared at
+          its final position while the opacity eased. That is the snap.
+
+          From `lg` it starts a full height plus its inset ABOVE the card, so it
+          is outside the photograph entirely (the card clips it) and slides down
+          into place.
+
+          NO ENTER DELAY. It briefly carried `group-hover:delay-150` so it would
+          follow the card in — but a delay written on the hover state applies
+          only on the way IN, which made entering and leaving different lengths.
+          Every timing on this card is now declared on the base state, so the
+          browser uses the identical duration and curve in both directions and
+          the whole card opens and closes as one movement. */}
       <span
         aria-hidden
         className="absolute right-4 top-4 z-10 flex items-center gap-1.5 rounded-full bg-brand
           py-1 pl-4 pr-1 font-sans text-[13px] font-medium text-white
           shadow-[0_4px_16px_rgba(0,0,0,0.25)]
-          transition-[opacity,transform] duration-[var(--brochure-dur)] ease-[var(--brochure-ease)]
+          transition-[opacity,translate] duration-[var(--brochure-dur)] ease-[var(--brochure-ease)]
           sm:right-5 sm:top-5 sm:gap-2 sm:py-1.5 sm:pl-5 sm:pr-1.5 sm:text-[15px]
-          lg:-translate-y-1 lg:opacity-0 lg:group-hover:translate-y-0 lg:group-hover:opacity-100"
+          lg:-translate-y-[calc(100%+2rem)] lg:opacity-0
+          lg:group-hover:translate-y-0 lg:group-hover:opacity-100"
       >
         <span className="whitespace-nowrap">Download Brochure</span>
         <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white text-brand sm:h-9 sm:w-9">

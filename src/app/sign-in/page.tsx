@@ -90,8 +90,16 @@ function SignInContent() {
     <div className="min-h-screen bg-ivory pt-[68px] md:pt-[84px] flex flex-col md:flex-row">
       {/* ── Image panel: a mobile image band, a full-height column on desktop ── */}
       <div className="relative w-full h-[38vh] min-h-[260px] md:w-1/2 md:h-auto bg-sand overflow-hidden">
+        {/* The panel was never meant to be plain — it pointed at
+            `/images/signin.png`, a file that does not exist, so EditorialImage
+            fell through to its grey placeholder and the "BELOVI" watermark.
+            That is the empty gradient; the layout around it was already right.
+
+            EditorialImage renders `object-cover h-full w-full`, so the artwork
+            fills the panel at any shape without distortion, and the wrapper's
+            `overflow-hidden` crops the excess. */}
         <EditorialImage
-          src="/images/signin.png"
+          src="/images/Component 6.png"
           alt="BELOVI"
           placeholderLabel="BELOVI"
           ratio=""

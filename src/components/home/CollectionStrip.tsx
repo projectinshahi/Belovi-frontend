@@ -114,25 +114,26 @@ export default function CollectionStrip({ data }: { data: FeaturedCollection | n
 }
 
 /**
- * One colourway: a white plinth with the piece sitting on it and breaking past
- * its top and bottom edges. The overhang is the point — a cut-out contained
- * inside its card reads as a photograph, while one that overlaps reads as an
- * object resting on a surface.
+ * One colourway, drawn exactly as supplied.
+ *
+ * NOTHING IS RENDERED BEHIND THE IMAGE. This used to lay a cream plinth under
+ * each one — a rounded `bg-cream` rectangle the piece appeared to rest on — but
+ * the supplied artwork carries its own white ground, so the plinth showed as a
+ * second, differently-toned panel stacked behind it.
+ *
+ * `object-contain` is kept, which is what guarantees the file is never cropped:
+ * the whole image is fitted inside the box and its aspect ratio preserved.
  */
 function Colourway({ src, label }: { src: string; label: string }) {
   return (
-    <div className="relative h-[160px] w-[260px] shrink-0 sm:h-[200px] sm:w-[330px] lg:h-[230px] lg:w-[390px]">
-      <span
-        aria-hidden
-        className="absolute inset-x-0 bottom-[10%] top-[26%] rounded-[28px] bg-cream sm:rounded-[38px]"
-      />
+    <div className="h-[160px] w-[260px] shrink-0 sm:h-[200px] sm:w-[330px] lg:h-[230px] lg:w-[390px]">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={src}
         alt={label}
         loading="lazy"
         draggable={false}
-        className="relative h-full w-full select-none object-contain"
+        className="h-full w-full select-none object-contain"
       />
     </div>
   );

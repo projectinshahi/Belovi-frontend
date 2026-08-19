@@ -453,8 +453,12 @@ section[id] {
    coming back, so closing feels like the reverse of opening rather than a
    different gesture. */
 .brochure-strip {
-  --brochure-dur: 760ms;
-  --brochure-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --brochure-dur: 1150ms;
+  /* Gentler than the previous curve at both ends. `0.22,1,0.36,1` leaves very
+     fast and decelerates hard, which reads as a lunge on a long duration; this
+     eases IN as well as out, so the card starts moving softly, travels, and
+     settles — the same shape opening and closing. */
+  --brochure-ease: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Compact on a phone and a tablet: there is no hover there, so the card never

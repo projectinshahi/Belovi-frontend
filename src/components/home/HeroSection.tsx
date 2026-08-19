@@ -165,15 +165,28 @@ export default function HeroSection() {
             ))}
           </h1>
 
+          {/* The gap you SEE is mostly the headline's own leading, not this
+              margin. `display-hero` sets line-height 1.2 on type up to 94px, so
+              the last line carries roughly 24px of empty box beneath its
+              baseline before any margin applies. Trimming the margin alone
+              therefore moves the visible gap far less than the numbers suggest —
+              which is why several steps of `mt-*` barely showed.
+
+              So from `sm` the margin goes NEGATIVE, reclaiming part of that
+              leading rather than fighting it. Typography is untouched: the
+              line-height still governs the space BETWEEN the headline's lines,
+              exactly as designed — this only pulls the deck up under the last
+              one. Mobile keeps its positive margin, where the type is small
+              enough that the leading is already slight. */}
           <p
-            className="mt-7 max-w-[42ch] animate-[heroBlurIn_0.8s_ease-out_both] text-body text-muted sm:mt-9"
+            className="mt-4 max-w-[42ch] animate-[heroBlurIn_0.8s_ease-out_both] text-body text-muted sm:-mt-1"
             style={{ animationDelay: `${tailDelay}ms` }}
           >
             {banner.description}
           </p>
 
           <div
-            className="mt-8 animate-[heroPop_0.7s_cubic-bezier(0.34,1.56,0.64,1)_both] sm:mt-10"
+            className="mt-11 animate-[heroPop_0.7s_cubic-bezier(0.34,1.56,0.64,1)_both] sm:mt-14"
             style={{ animationDelay: `${tailDelay + 180}ms` }}
           >
             <MagneticCta href={banner.ctaHref} label={banner.ctaLabel} disabled={!!reduce} />
