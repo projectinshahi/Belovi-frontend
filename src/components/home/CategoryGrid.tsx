@@ -208,14 +208,34 @@ export default function CategoryGrid() {
                this whole grid during development. The keyframe is neutralised by
                the reduced-motion query in globals.css, and `key` on the wrapper
                restarts the cascade when the category changes. */
+            /* A horizontal RAIL, not a grid. The grid stacked one card per row
+               below 420px and two below `lg`, so a phone met the category as a
+               tall column it had to scroll past. The pieces now sit on one line
+               and scroll sideways at every width.
+
+               Native `overflow-x-auto` with scroll-snap does the work: it keeps
+               momentum, touch dragging, trackpad gestures and keyboard scrolling
+               for free, and costs no dependency and no state. `hide-scrollbar`
+               is the same class the Featured rail uses, so the two read alike.
+
+               Card widths are set so the row lands on whole cards — a peek of
+               the next one on a phone, which is what signals it scrolls — and so
+               four fill the row exactly at `lg`, preserving the four-up look the
+               section already had. */
             <div
               key={active}
-              className="grid grid-cols-1 gap-5 min-[420px]:grid-cols-2 lg:grid-cols-4 lg:gap-6"
+              role="region"
+              aria-label={`${active} pieces`}
+              tabIndex={0}
+              className="hide-scrollbar -mx-1 flex snap-x snap-mandatory gap-5 overflow-x-auto
+                scroll-smooth px-1 pb-2 lg:gap-6"
             >
               {shown.map((p, i) => (
                 <div
                   key={p._id}
-                  className="animate-[heroRise_0.7s_cubic-bezier(0.16,1,0.3,1)_both]"
+                  className="w-[78vw] shrink-0 snap-start animate-[heroRise_0.7s_cubic-bezier(0.16,1,0.3,1)_both]
+                    min-[420px]:w-[46vw] sm:w-[44vw] md:w-[30vw]
+                    lg:w-[calc((100%-4.5rem)/4)]"
                   style={{ animationDelay: `${i * 100}ms` }}
                 >
                   <ProductCard

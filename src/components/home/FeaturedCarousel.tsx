@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Reveal from "../ui/Reveal";
+import RailButton from "../ui/RailButton";
 import Link from "next/link";
 import { cldOptimize } from "../../lib/image";
 import { featuredHref, type FeaturedCollection, type FeaturedCardProduct } from "../../lib/featured";
@@ -258,52 +259,6 @@ export default function FeaturedCarousel({ data }: { data: FeaturedCollection | 
           ))}
       </div>
     </section>
-  );
-}
-
-function RailButton({
-  label,
-  onClick,
-  disabled,
-  direction,
-  filled = false,
-}: {
-  label: string;
-  onClick: () => void;
-  disabled: boolean;
-  direction: "left" | "right";
-  /** The next control is filled, the previous outlined — the design's hierarchy. */
-  filled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-label={label}
-      className={`group grid h-12 w-12 place-items-center rounded-full transition-all duration-300
-        ease-[cubic-bezier(0.16,1,0.3,1)] disabled:cursor-not-allowed disabled:opacity-35 ${
-          filled
-            ? "bg-brand text-white enabled:hover:scale-105 enabled:hover:bg-brand-hover enabled:hover:shadow-[0_4px_16px_rgba(211,40,40,0.3)]"
-            : "border-[1.5px] border-ink/80 text-ink enabled:hover:scale-105 enabled:hover:border-ink enabled:hover:bg-ink/[0.04]"
-        }`}
-    >
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className={`h-5 w-5 transition-transform duration-300 ${
-          direction === "left"
-            ? "rotate-180 group-enabled:group-hover:-translate-x-0.5"
-            : "group-enabled:group-hover:translate-x-0.5"
-        }`}
-      >
-        <path d="m9 5 7 7-7 7" />
-      </svg>
-    </button>
   );
 }
 
