@@ -18,13 +18,10 @@ import {
   fromPrice,
   productColors,
   colorSwatch,
-  collectionImage,
   inPriceBand,
-  PRICE_BANDS,
-  FIGMA_MATERIALS,
-  FIGMA_COLORS,
+  priceBandsFor,
 } from "../../lib/product";
-import { slugify, useCategories } from "../../lib/categories";
+import { slugify } from "../../lib/categories";
 
 /**
  * The collection page — rebuilt to the Figma frame (node 58:1183).
@@ -81,49 +78,51 @@ interface ProductBrowserProps {
   scope?: BrowserScope;
   /** Fixed header for edit pages; the shop derives its own. */
   heading?: { eyebrow: string; title: string; description?: string };
+  /**
+   * Replaces the last breadcrumb, for routes whose final segment is an id
+   * rather than a name — a Featured Collection at `/collections/<id>` would
+   * otherwise show the raw ObjectId to the shopper. Omitted elsewhere, so the
+   * trail keeps deriving itself from the path as before.
+   */
+  breadcrumbLabel?: string;
 }
 
 /**
- * Build a facet list from a FIXED baseline (the options Figma draws) unioned
- * with whatever the catalogue actually carries.
+ * Build a filter's options from the CATALOGUE, and only from the catalogue.
  *
- * Both halves matter. Without the baseline the panel would be whatever five
- * products happen to be loaded, and would not match the design. Without the
- * union, a fabric the studio types into a new product would be unreachable —
- * filed under something no checkbox can select. Options nothing matches survive
- * at a count of zero and the sidebar renders them disabled.
+ * There used to be a fixed baseline here — the options the design drew — unioned
+ * with whatever the products carried. That put permanent checkboxes on the panel
+ * for materials and colours nothing was made of, and the ones that mattered were
+ * whichever the design happened to anticipate. An option now exists because a
+ * product has that value, so adding, editing or deleting a piece in the admin
+ * reshapes the filters on the next load with no deploy.
+ *
+ * Values are grouped by slug, so "Faux Leather" and "faux leather" are one
+ * option; the first spelling seen supplies the label. Sorted by frequency, then
+ * alphabetically, so the most common values sit at the top of the list.
  */
-function unionFacets(
-  baseline: string[],
-  fromCatalogue: string[],
+function facetsFrom(
+  values: string[],
   countFor: (id: string) => number,
   swatchFor?: (label: string) => string
 ): Facet[] {
   const byId = new Map<string, Facet>();
 
-  for (const label of baseline) {
-    const id = slugify(label);
-    if (id) byId.set(id, { id, label, count: countFor(id), swatch: swatchFor?.(label) });
-  }
-  for (const raw of fromCatalogue) {
+  for (const raw of values) {
     const label = (raw || "").trim();
     const id = slugify(label);
     if (!id || byId.has(id)) continue;
-    byId.set(id, {
-      id,
-      // Studio values arrive lowercased from the variant field; title-case them
-      // so "ivory" doesn't sit beside "Leather" looking like a mistake.
-      label: label.charAt(0).toUpperCase() + label.slice(1),
-      count: countFor(id),
-      swatch: swatchFor?.(label),
-    });
+    byId.set(id, { id, label, count: countFor(id), swatch: swatchFor?.(label) });
   }
-  return [...byId.values()];
+
+  return [...byId.values()]
+    .filter((f) => f.count > 0)
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 }
 
 // ─── Content ────────────────────────────────────────────────────────────────
 
-function BrowserContent({ scope, heading }: ProductBrowserProps) {
+function BrowserContent({ scope, heading, breadcrumbLabel }: ProductBrowserProps) {
   const searchParams = useSearchParams();
   const reduce = useReducedMotion();
 
@@ -135,8 +134,6 @@ function BrowserContent({ scope, heading }: ProductBrowserProps) {
   const collectionSlug = slugify(collectionParam);
 
   const [products, setProducts] = useState<Product[]>([]);
-  /** The studio's saved categories — seeds the Category filter. */
-  const storeCategories = useCategories() ?? [];
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
 
@@ -250,32 +247,35 @@ function BrowserContent({ scope, heading }: ProductBrowserProps) {
   /* Plain derivation, not a useMemo: `storeCategories` arrives from a fetch, and
      a dependency array that missed it would freeze the filter on the empty list
      it was built with. The React Compiler memoises this. */
-  const categoryFacets = unionFacets(
-    // The studio's saved categories lead, so the filter offers them even before
-    // a piece is filed under one; anything a piece actually carries is unioned
-    // in after, so no product becomes unfilterable.
-    storeCategories.map((c) => c.name),
+  /* Only categories a piece is actually filed under. The studio's saved list
+     used to seed this, which put a checkbox on the panel for every category
+     even when nothing was filed there — a filter that always returned nothing.
+     `facetsFrom` drops zero-count options, so this now tracks the catalogue. */
+  const categoryFacets = facetsFrom(
     scoped.map((p) => p.category || ""),
     (id) => scoped.filter((p) => slugify(p.category) === id).length
-  )
-    // On an edit page, hide categories with nothing in this section — the whole
-    // panel would otherwise be greyed out on a narrow slice.
-    .filter((c) => (scope ? c.count > 0 : true));
+  );
+
+  /* Bands cut to the prices that exist, so they re-scale as pricing changes.
+     Memoised once and used for BOTH the checkboxes and the filtering below —
+     two derivations of the same bands could disagree about what a tick means. */
+  const priceBands = useMemo(() => priceBandsFor(scoped.map(fromPrice)), [scoped]);
 
   const priceFacets = useMemo<Facet[]>(
     () =>
-      PRICE_BANDS.map((b) => ({
-        id: b.id,
-        label: b.label,
-        count: scoped.filter((p) => inPriceBand(fromPrice(p), b)).length,
-      })),
-    [scoped]
+      priceBands
+        .map((b) => ({
+          id: b.id,
+          label: b.label,
+          count: scoped.filter((p) => inPriceBand(fromPrice(p), b)).length,
+        }))
+        .filter((f) => f.count > 0),
+    [scoped, priceBands]
   );
 
   const materialFacets = useMemo(
     () =>
-      unionFacets(
-        FIGMA_MATERIALS,
+      facetsFrom(
         scoped.flatMap((p) => p.materials || []),
         (id) => scoped.filter((p) => (p.materials || []).some((m) => slugify(m) === id)).length
       ),
@@ -284,8 +284,7 @@ function BrowserContent({ scope, heading }: ProductBrowserProps) {
 
   const colorFacets = useMemo(
     () =>
-      unionFacets(
-        FIGMA_COLORS.map((c) => c.name),
+      facetsFrom(
         scoped.flatMap(productColors),
         (id) => scoped.filter((p) => productColors(p).some((c) => slugify(c) === id)).length,
         colorSwatch
@@ -302,7 +301,7 @@ function BrowserContent({ scope, heading }: ProductBrowserProps) {
   );
 
   const filtered = useMemo(() => {
-    const bands = PRICE_BANDS.filter((b) => selectedPrices.includes(b.id));
+    const bands = priceBands.filter((b) => selectedPrices.includes(b.id));
 
     const result = scoped.filter((p) => {
       const catOk =
@@ -349,6 +348,7 @@ function BrowserContent({ scope, heading }: ProductBrowserProps) {
     }
   }, [
     scoped,
+    priceBands,
     selectedCategories,
     selectedPrices,
     selectedMaterials,
@@ -387,7 +387,11 @@ function BrowserContent({ scope, heading }: ProductBrowserProps) {
       setPage(1);
     };
 
-  const groups: FilterGroupSpec[] = [
+  /* A group with no options is not rendered at all. That is the whole rule: a
+     catalogue with no materials recorded shows no Material filter, and one with
+     a single price shows no Price filter, rather than an empty panel section
+     the shopper has to read past to find out it is empty. */
+  const groups: FilterGroupSpec[] = ([
     {
       key: "category",
       title: "Categories",
@@ -416,7 +420,7 @@ function BrowserContent({ scope, heading }: ProductBrowserProps) {
       selected: selectedColors,
       onToggle: toggleIn(setSelectedColors),
     },
-  ];
+  ] as FilterGroupSpec[]).filter((g) => g.options.length > 0);
 
   /** Every ticked box, flattened into the pill row, each able to remove itself. */
   const activePills = groups.flatMap((g) =>
@@ -531,7 +535,7 @@ function BrowserContent({ scope, heading }: ProductBrowserProps) {
 
           {/* ── Main column ──────────────────────────────────────────────── */}
           <div className="min-w-0 flex-1">
-            <Breadcrumbs />
+            <Breadcrumbs currentLabel={breadcrumbLabel} />
 
             {/* Toolbar */}
             <div className="mt-6 flex flex-col gap-4 sm:mt-8">
@@ -680,7 +684,6 @@ function BrowserContent({ scope, heading }: ProductBrowserProps) {
                       <Reveal key={product._id} delay={(i % 3) * 0.07}>
                         <ProductCard
                           product={product}
-                          imageOverride={collectionImage(start + i)}
                         />
                       </Reveal>
                     ))}

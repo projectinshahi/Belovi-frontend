@@ -36,20 +36,10 @@ export default function ProductCard({
   className = "",
   imageRatio = "aspect-square",
   href,
-  imageOverride,
 }: {
   product: Product;
   className?: string;
   imageRatio?: string;
-  /**
-   * Replaces the piece's own photography on this card.
-   *
-   * The collection grid passes one of the design's product shots. It WINS over
-   * the studio's upload rather than merely filling a gap — see COLLECTION_IMAGES
-   * in lib/product.ts for why, and for the one line that undoes it. Omit it and
-   * the card behaves exactly as it always has.
-   */
-  imageOverride?: string;
   /**
    * Overrides the detail-page link. Used by the homepage showcase cards, which
    * are art direction rather than catalogue rows and so have no detail page of
@@ -67,9 +57,11 @@ export default function ProductCard({
   const [justAdded, setJustAdded] = useState(false);
 
   const own = productImagePool(product).filter((s) => !failed.includes(s));
-  /* An override replaces the pool outright rather than heading it, so the
-     hover cross-fade doesn't reveal the photograph it was meant to replace. */
-  const pool = imageOverride ? [imageOverride] : own;
+  /* The piece's own photography, and nothing else. A card used to accept an
+     `imageOverride` that REPLACED the pool — the collection grid passed one of
+     the design's stock shots, so a studio upload was rendered invisible on that
+     page no matter what was in the database. */
+  const pool = own;
   const price = fromPrice(product);
   const oldPrice = fromOldPrice(product);
   const tags = productTags(product);

@@ -35,33 +35,6 @@ const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000").re
  */
 const VISIBLE = 4;
 
-/**
- * The design's own showcase pieces, in code rather than in the database.
- *
- * These four are art direction — they have to render on any machine and any
- * database, including a fresh one, which seeded products cannot promise. They
- * lead the Luxury Furniture pill and are shaped as `Product` so the same card
- * component draws them; `href` sends them to the shop, since there is no detail
- * page behind a card that is not a catalogue row.
- *
- * Only Luxury Furniture has a showcase. Repeating these chairs under Wellness or
- * Accessories would file them under categories they do not belong to.
- */
-const SHOWCASE: Record<string, Product[]> = {
-  "Luxury Furniture": [
-    ["Premium Black Leather Tantra", "/images/Component 1.png", 100],
-    ["Soft Couch with head pillow Tantra", "/images/Component 2.png", 200],
-    ["Premium Convertible cushion Tantra", "/images/Component 3.png", 250],
-    ["Red Tandra Chaise Premium Stylish Couch", "/images/Component 4.png", 100],
-  ].map(([name, image, price]) => ({
-    _id: `showcase-${image}`,
-    name: name as string,
-    category: "Luxury Furniture",
-    images: [image as string],
-    variants: [{ size: "Standard", price: price as number }],
-    starRating: 3.5,
-  })) as Product[],
-};
 
 export default function CategoryGrid() {
   const [products, setProducts] = useState<Product[] | null>(null);
@@ -100,15 +73,17 @@ export default function CategoryGrid() {
     load();
   }, [load]);
 
-  // Showcase first, then whatever the studio has filed under this category.
-  // `active` is undefined until the categories land, which matches nothing.
-  // Plain derivation: the React Compiler memoises this, and a manual useMemo
-  // over a value derived from the fetched list is one it has to bail out on.
+  /* Only pieces the studio has actually filed under this category.
+     `active` is undefined until the categories land, which matches nothing.
+     Plain derivation: the React Compiler memoises this, and a manual useMemo
+     over a value derived from the fetched list is one it has to bail out on.
+
+     Four invented "showcase" pieces used to lead this list, drawn from bundled
+     artwork and shaped as products. They rendered as real catalogue rows, could
+     not be edited or removed from the admin, and pushed the studio's own pieces
+     out of a four-slot row. */
   const shown = active
-    ? [
-        ...(SHOWCASE[active] ?? []),
-        ...(products ?? []).filter((p) => p.category === active),
-      ].slice(0, VISIBLE)
+    ? (products ?? []).filter((p) => p.category === active).slice(0, VISIBLE)
     : [];
 
   // Only a genuinely empty grid waits. The showcase is local, so a category it
@@ -238,11 +213,7 @@ export default function CategoryGrid() {
                     lg:w-[calc((100%-4.5rem)/4)]"
                   style={{ animationDelay: `${i * 100}ms` }}
                 >
-                  <ProductCard
-                    product={p}
-                    imageRatio="aspect-[16/10] sm:aspect-[4/3]"
-                    href={p._id.startsWith("showcase-") ? "/products" : undefined}
-                  />
+                  <ProductCard product={p} imageRatio="aspect-[16/10] sm:aspect-[4/3]" />
                 </div>
               ))}
             </div>

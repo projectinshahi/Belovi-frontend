@@ -217,20 +217,71 @@ export interface PriceBand {
  * with quantile-derived bands once the catalogue is broad enough for that to
  * mean anything.
  */
-export const PRICE_BANDS: PriceBand[] = [
-  { id: "0-2000", label: "0 - 2000", min: 0, max: 2000 },
-  { id: "2000-4000", label: "2000 - 4000", min: 2000, max: 4000 },
-  { id: "4000-8000", label: "4000 - 8000", min: 4000, max: 8000 },
-  { id: "8000-10000", label: "8000 - 10,000", min: 8000, max: 10000 },
-  { id: "10000-plus", label: "10,000+", min: 10000, max: Infinity },
-];
+/**
+ * Price bands DERIVED from the catalogue, rather than a fixed ladder.
+ *
+ * The five hardcoded bands here ran 0–10,000+, which is the wrong shape for a
+ * furniture catalogue priced in the hundreds: every piece landed in the first
+ * band and the other four were dead checkboxes. Bands are now cut to the prices
+ * that actually exist, so they re-scale on their own as the studio's pricing
+ * changes.
+ *
+ * The step is rounded to 1, 2 or 5 × a power of ten so the labels read as prices
+ * a shopper would recognise rather than as arithmetic (`250 - 500`, not
+ * `237 - 474`). The last band is open-ended because `inPriceBand` is
+ * half-open — without it the single most expensive piece matches nothing.
+ *
+ * Returns `[]` when there is nothing to divide: fewer than two priced pieces, or
+ * every piece at one price. The caller drops the filter entirely in that case.
+ */
+export function priceBandsFor(prices: number[]): PriceBand[] {
+  const valid = prices.filter((n) => Number.isFinite(n) && n > 0);
+  if (valid.length < 2) return [];
+
+  const min = Math.min(...valid);
+  const max = Math.max(...valid);
+  if (max <= min) return [];
+
+  const TARGET_BANDS = 4;
+  const rough = (max - min) / TARGET_BANDS;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rough)));
+  const step =
+    [1, 2, 5, 10].map((m) => m * magnitude).find((s) => (max - min) / s <= TARGET_BANDS) ??
+    magnitude * 10;
+
+  const money = (n: number) => Math.round(n).toLocaleString("en-IN");
+
+  const bands: PriceBand[] = [];
+  for (let lo = Math.floor(min / step) * step; lo < max; lo += step) {
+    bands.push({
+      id: `${lo}-${lo + step}`,
+      label: `${money(lo)} - ${money(lo + step)}`,
+      min: lo,
+      max: lo + step,
+    });
+  }
+
+  // Open the top band so the dearest piece is inside it.
+  const last = bands[bands.length - 1];
+  if (last) {
+    last.id = `${last.min}-plus`;
+    last.label = `${money(last.min)}+`;
+    last.max = Infinity;
+  }
+
+  return bands;
+}
 
 export function inPriceBand(price: number, band: PriceBand): boolean {
   return price >= band.min && price < band.max;
 }
 
 /**
- * The Material and Color options Figma lists, as a fixed baseline.
+ * Swatch tones for colour names the design specifies.
+ *
+ * NOT a list of filter options — the Color filter is built from the colours the
+ * catalogue actually carries. This only supplies an exact tone for names the
+ * design pinned down; anything else falls through to the CSS colour keyword.
  *
  * The panel unions these with whatever the catalogue actually carries, so the
  * page matches the design on day one AND a fabric the studio types into a new
@@ -238,20 +289,10 @@ export function inPriceBand(price: number, band: PriceBand): boolean {
  * renders disabled rather than hidden — the design shows a full panel, and a
  * checkbox that silently returns nothing is worse than one that says so.
  */
-export const FIGMA_MATERIALS = [
-  "Leather",
-  "Velvet",
-  "Faux Leather",
-  "Microfiber",
-  "Piping",
-];
 
-/**
- * Figma lists "Red" twice — once with a red swatch and once with a black one.
- * The second is Black; the duplicated label is a slip in the file, and shipping
- * two identical checkboxes that filter differently would be a bug on the page.
- */
-export const FIGMA_COLORS: { name: string; swatch: string }[] = [
+
+/** The design's pinned tones. Rendering only — see above. */
+export const SWATCH_TONES: { name: string; swatch: string }[] = [
   { name: "Red", swatch: "#D32F2F" },
   { name: "Black", swatch: "#010101" },
   { name: "Grey", swatch: "#9A9A9A" },
@@ -267,34 +308,7 @@ export const FIGMA_COLORS: { name: string; swatch: string }[] = [
  * quietly renders nothing for a name CSS doesn't know.
  */
 export function colorSwatch(name: string): string {
-  const known = FIGMA_COLORS.find((c) => c.name.toLowerCase() === name.toLowerCase());
+  const known = SWATCH_TONES.find((c) => c.name.toLowerCase() === name.toLowerCase());
   return known ? known.swatch : name.toLowerCase();
 }
 
-/**
- * The design's own product photography, in the order BELOVA supplied it.
- *
- * These OVERRIDE the studio's uploads on the collection grid — the catalogue
- * currently holds stock interiors rather than Belovi's own pieces, and the grid
- * is the page that has to sell them. Assigned by card POSITION, not per product,
- * so the grid never repeats a shot until it has run through all seven. Spaces
- * are percent-encoded so the src needs no browser fixup.
- *
- * ponytail: a hardcoded override, and it is a trap by design — once real product
- * photography is uploaded in Studio → Products, these will still win and the new
- * uploads will never appear. Delete this array and the `imageOverride` prop
- * passed in ProductBrowser at that point; nothing else references it.
- */
-export const COLLECTION_IMAGES = [
-  "/images/img%203.png",
-  "/images/img%202.png",
-  "/images/img%201.png",
-  "/images/Component%204.png",
-  "/images/Component%203.png",
-  "/images/Component%202.png",
-  "/images/Component%201.png",
-];
-
-export function collectionImage(index: number): string {
-  return COLLECTION_IMAGES[index % COLLECTION_IMAGES.length];
-}

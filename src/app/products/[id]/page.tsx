@@ -14,7 +14,10 @@ import { useCart } from "../../../context/CartContext";
 import { isSignedIn, signInHref } from "../../../lib/auth";
 import { formatINR, type Product as CardProduct } from "../../../lib/product";
 import Gallery from "./_components/Gallery";
-import StockPill, { isInStock } from "./_components/StockPill";
+/* `isInStock` only — the StockPill badge is no longer shown on this page.
+   Availability itself is unchanged: it still disables the purchase buttons and
+   drives the "not available to order" line below. */
+import { isInStock } from "./_components/StockPill";
 import QuantityStepper from "./_components/QuantityStepper";
 import VariantSelector from "./_components/VariantSelector";
 import CountUpPrice from "./_components/CountUpPrice";
@@ -384,7 +387,6 @@ export default function ProductDetailPage() {
               <h1 className="font-sans text-[clamp(22px,2.5vw,30px)] font-[500] sm:font-[600] leading-[1.3] text-[#1A1A1A]">
                 {product.name}
               </h1>
-              {product.status && <StockPill status={product.status} />}
             </Reveal>
 
             <Reveal y={24} delay={0.24} className="flex flex-wrap items-baseline gap-[16px]">
@@ -403,15 +405,26 @@ export default function ProductDetailPage() {
                   {formatINR(oldPrice)}
                 </span>
               )}
-            </Reveal>
 
-            {discountPct > 0 && (
-              <Reveal y={24} delay={0.32}>
-                <span className="inline-flex w-max items-center justify-center rounded-[8px] bg-[#D32F2F] px-[16px] py-[8px] font-sans text-[13px] font-medium uppercase text-white sm:text-[14px] mt-[4px]">
+              {/* The discount now sits IN the price row, after the struck-through
+                  original, rather than on a line of its own beneath it.
+
+                  `self-center` is the alignment: the row is `items-baseline` so
+                  the two prices sit on a shared baseline, which is right for
+                  type but wrong for a pill — baseline-aligned, its box would
+                  hang below the numbers. Centring only this child leaves the
+                  prices untouched and squares the badge against them.
+
+                  Sized down to match: it is now an annotation on the price, not
+                  a banner under it. */}
+              {discountPct > 0 && (
+                <span className="inline-flex w-max shrink-0 items-center justify-center self-center
+                  rounded-[6px] bg-[#D32F2F] px-[9px] py-[3px] font-sans text-[11px] font-medium
+                  uppercase leading-none text-white sm:px-[10px] sm:py-[4px] sm:text-[12px]">
                   {discountPct}% OFF
                 </span>
-              </Reveal>
-            )}
+              )}
+            </Reveal>
 
             {product.description && (
               <Reveal y={24} delay={0.4}>

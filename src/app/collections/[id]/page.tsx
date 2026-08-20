@@ -61,6 +61,10 @@ export default async function FeaturedCollectionPage({
         title: card.title || "Collection",
         description: card.subtitle || undefined,
       }}
+      /* The URL ends in this card's id, so the trail would otherwise close on a
+         raw ObjectId. Same fallback chain as the heading, so the crumb and the
+         page title always agree. */
+      breadcrumbLabel={card.title || card.badge || "Collection"}
     />
   );
 }
