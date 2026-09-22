@@ -39,13 +39,15 @@ import {
  * for a few seconds after a touch or an arrow press, while the player is open
  * and while the rail is off screen. Reduced motion turns the drift off entirely.
  *
- * THE ACTIVE CARD PLAYS. The left-most card that is fully inside the rail plays
- * a muted, chrome-less preview in place; when it drifts out of that position its
- * preview pauses and the next card's starts. Previews use YouTube's IFrame
- * Player API so they can really pause. A player is only created for the active
- * card and the one after it (pre-warmed, so the hand-over is quick), and is
- * destroyed once its card leaves the screen, so at most a few exist at once.
- * Reduced motion and data-saver keep every card on its poster.
+ * EVERY CARD IN VIEW PLAYS. A card at least 60% inside the rail's visible
+ * window plays a muted, chrome-less preview in place; as it drifts out (into
+ * the edge fade) it pauses, and a card drifting in starts. Previews use
+ * YouTube's IFrame Player API so they can really pause. A player is created
+ * only for cards actually on screen, so one entering from the edge is already
+ * loaded by the time it should play, and is destroyed once its card leaves.
+ * Nothing loads until the section is about a screen away, so the players are
+ * ready (and start at once) by the time it scrolls in; reduced motion and
+ * data-saver keep every card on its poster.
  */
 
 /** Drift speed, in pixels per second. Slow enough to read every name. */
@@ -60,8 +62,14 @@ const GAP = 20;
 /** Matches the Categories panel, so the rail and heading line up with it. */
 const PAD_X = "px-5 sm:px-10 lg:px-[clamp(2.5rem,5vw,5rem)]";
 
-/** Tall 9:16 cards: about 1.4 on a phone, three on a tablet, four on a laptop. */
-const CARD_W = "w-[64vw] max-w-[300px] shrink-0 sm:w-[clamp(230px,22vw,320px)] sm:max-w-none";
+/** Tall 9:16 cards: about 1.5 on a phone, three on a tablet, four to five on a laptop. */
+const CARD_W = "w-[56vw] max-w-[260px] shrink-0 sm:w-[clamp(200px,19vw,280px)] sm:max-w-none";
+
+/** Share of a card's width that must be inside the rail's window for it to play. */
+const PLAY_SHARE = 0.6;
+
+const sameList = (a: number[], b: number[]) =>
+  a.length === b.length && a.every((v, i) => v === b[i]);
 
 /** Distance from one copy of the list to the next — one full loop. */
 const loopLength = (group: HTMLElement) =>
@@ -79,11 +87,13 @@ export default function VideoShowcase() {
   const [playing, setPlaying] = useState<Video | null>(null);
   /** The list overflows the panel, so it is doubled and drifts. */
   const [loop, setLoop] = useState(false);
-  /** Index (across both copies) of the card whose preview plays; -1 for none. */
-  const [active, setActive] = useState(-1);
-  /** Cards holding a preview player: the active one, the next, and any still on screen. */
+  /** Indices (across both copies) of the cards whose previews play. */
+  const [live, setLive] = useState<number[]>([]);
+  /** Cards holding a preview player: every card at least partly on screen. */
   const [warm, setWarm] = useState<number[]>([]);
   const [sectionVisible, setSectionVisible] = useState(false);
+  /** The section has come within about a screen of view; no player loads before that. */
+  const [seen, setSeen] = useState(false);
   const reduce = useReducedMotion();
   const previews = !reduce && !saveData();
 
@@ -91,7 +101,7 @@ export default function VideoShowcase() {
   const groupRef = useRef<HTMLDivElement>(null);
   const hovered = useRef(false);
   const focused = useRef(false);
-  const inView = useRef(false);
+  const railInView = useRef(false);
   const playerOpen = useRef(false);
   const holdUntil = useRef(0);
 
@@ -118,14 +128,24 @@ export default function VideoShowcase() {
     ro.observe(group);
 
     const io = new IntersectionObserver(([entry]) => {
-      inView.current = entry.isIntersecting;
+      railInView.current = entry.isIntersecting;
       setSectionVisible(entry.isIntersecting);
     });
     io.observe(rail);
 
+    // Loading starts early so the previews are ready to play on arrival.
+    const near = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) setSeen(true);
+      },
+      { rootMargin: "100% 0px" }
+    );
+    near.observe(rail);
+
     return () => {
       ro.disconnect();
       io.disconnect();
+      near.disconnect();
     };
   }, [videos]);
 
@@ -149,7 +169,7 @@ export default function VideoShowcase() {
         !hovered.current &&
         !focused.current &&
         !playerOpen.current &&
-        inView.current &&
+        railInView.current &&
         now > holdUntil.current;
 
       if (idle) {
@@ -170,10 +190,9 @@ export default function VideoShowcase() {
     return () => cancelAnimationFrame(raf);
   }, [loop]);
 
-  /* Which card is active, and which cards keep a player. Re-measured at most
-     once a frame, on scroll (the drift scrolls too) and on resize. State only
-     changes when a card crosses a boundary, so the drift itself re-renders
-     nothing. */
+  /* Which cards play, and which keep a player. Re-measured at most once a
+     frame, on scroll (the drift scrolls too) and on resize. State only changes
+     when a card crosses a boundary, so the drift itself re-renders nothing. */
   useEffect(() => {
     const rail = railRef.current;
     if (!rail || !videos?.length) return;
@@ -183,25 +202,19 @@ export default function VideoShowcase() {
       frame = 0;
       const box = rail.getBoundingClientRect();
       const style = getComputedStyle(rail);
-      // The padding is where the edge fade sits; a card entering it is leaving.
-      const left = box.left + parseFloat(style.paddingLeft) - 2;
-      const right = box.right - parseFloat(style.paddingRight) + 2;
-      const onScreen = new Set<number>();
-      let next = -1;
+      // The padding is where the edge fade sits; a card moving into it is leaving.
+      const left = box.left + parseFloat(style.paddingLeft);
+      const right = box.right - parseFloat(style.paddingRight);
+      const onScreen: number[] = [];
+      const playing: number[] = [];
       rail.querySelectorAll<HTMLElement>("[data-card]").forEach((card, i) => {
         const r = card.getBoundingClientRect();
-        if (r.right > box.left && r.left < box.right) onScreen.add(i);
-        if (next < 0 && r.left >= left && r.right <= right) next = i;
+        if (r.right > box.left && r.left < box.right) onScreen.push(i);
+        if (Math.min(r.right, right) - Math.max(r.left, left) >= r.width * PLAY_SHARE) playing.push(i);
       });
 
-      setActive(next);
-      setWarm((prev) => {
-        const keep = prev.filter((i) => onScreen.has(i));
-        for (const i of [next, next + 1]) {
-          if (i >= 0 && onScreen.has(i) && !keep.includes(i)) keep.push(i);
-        }
-        return keep.length === prev.length && keep.every((i) => prev.includes(i)) ? prev : keep;
-      });
+      setLive((prev) => (sameList(prev, playing) ? prev : playing));
+      setWarm((prev) => (sameList(prev, onScreen) ? prev : onScreen));
     };
 
     const schedule = () => {
@@ -256,8 +269,8 @@ export default function VideoShowcase() {
       video={v}
       copy={copy}
       onPlay={() => open(v)}
-      preview={previews && warm.includes(index)}
-      active={index === active && !playing && sectionVisible}
+      preview={previews && seen && warm.includes(index)}
+      active={live.includes(index) && !playing && sectionVisible}
     />
   );
 
@@ -525,7 +538,13 @@ function Preview({ id, active }: { id: string; active: boolean }) {
             frame.setAttribute("aria-hidden", "true");
             if (activeRef.current) target.playVideo();
           },
-          onStateChange: ({ data }) => setOn(data === YT.PlayerState.PLAYING),
+          /* Latches on the first PLAYING and never goes back. A looping Short
+             passes through ENDED and BUFFERING on every lap; following those
+             would flash the poster each time. It is hidden again only when the
+             card stops being active (and is paused), through `data-on`. */
+          onStateChange: ({ data }) => {
+            if (data === YT.PlayerState.PLAYING) setOn(true);
+          },
         },
       });
     });

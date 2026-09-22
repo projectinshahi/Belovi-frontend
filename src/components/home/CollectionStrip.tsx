@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import Reveal from "../ui/Reveal";
 import MagneticCta from "../ui/MagneticCta";
 import type { FeaturedCollection } from "../../lib/featured";
@@ -84,7 +85,13 @@ export default function CollectionStrip({
                     className="flex shrink-0 items-center gap-6 sm:gap-8"
                   >
                     {content.images.map((c, i) => (
-                      <Colourway key={`${copy}-${c._id ?? i}`} src={c.image} label={c.alt} />
+                      <Colourway
+                        key={`${copy}-${c._id ?? i}`}
+                        src={c.image}
+                        label={c.alt}
+                        product={c.product}
+                        hidden={copy === 1}
+                      />
                     ))}
                   </div>
                 ))}
@@ -126,27 +133,56 @@ export default function CollectionStrip({
  * The frame is bottom-aligned in the same slot sizes as before, so the marquee's
  * rhythm and speed are unchanged.
  */
-function Colourway({ src, label }: { src: string; label: string }) {
-  return (
-    <div className="flex h-[160px] w-[260px] shrink-0 items-end sm:h-[200px] sm:w-[330px] lg:h-[230px] lg:w-[390px]">
-      <div className="relative aspect-[1.7] w-full select-none">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={PLATE}
-          alt=""
-          aria-hidden
-          draggable={false}
-          className="absolute bottom-0 left-[8.33%] w-[83.33%]"
-        />
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={cldOptimize(src, 800)}
-          alt={label}
-          loading="lazy"
-          draggable={false}
-          className="absolute inset-x-0 top-0 h-[88.9%] w-full object-contain object-bottom"
-        />
-      </div>
+function Colourway({
+  src,
+  label,
+  product,
+  hidden,
+}: {
+  src: string;
+  label: string;
+  /** When set, the image links to this product's page. */
+  product?: { _id: string; name: string } | null;
+  /** In the marquee's duplicate copy: kept out of the tab order. */
+  hidden: boolean;
+}) {
+  const slot =
+    "flex h-[160px] w-[260px] shrink-0 items-end sm:h-[200px] sm:w-[330px] lg:h-[230px] lg:w-[390px]";
+  const art = (
+    <div className="relative aspect-[1.7] w-full select-none">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={PLATE}
+        alt=""
+        aria-hidden
+        draggable={false}
+        className="absolute bottom-0 left-[8.33%] w-[83.33%]"
+      />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={cldOptimize(src, 800)}
+        alt={label}
+        loading="lazy"
+        draggable={false}
+        className="absolute inset-x-0 top-0 h-[88.9%] w-full object-contain object-bottom
+          transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:-translate-y-1.5"
+      />
     </div>
+  );
+
+  if (!product) return <div className={slot}>{art}</div>;
+
+  /* The marquee already pauses on hover (globals.css), so the piece holds
+     still under the pointer long enough to be clicked. */
+  return (
+    <Link
+      href={`/products/${product._id}`}
+      tabIndex={hidden ? -1 : undefined}
+      aria-label={label ? `${label} — view product` : `View ${product.name}`}
+      draggable={false}
+      className={`group ${slot} rounded-[20px] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand`}
+    >
+      {art}
+    </Link>
   );
 }

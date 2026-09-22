@@ -6,8 +6,16 @@ export interface CollectionSection {
   description: string;
   /** The lifestyle image on the left. */
   mainImage: string;
-  /** The scrolling row. Each is a product cut-out; the band adds the white plate. */
-  images: { _id?: string; image: string; alt: string }[];
+  /**
+   * The scrolling row. Each is a product cut-out; the band adds the white plate.
+   * `product` is the linked piece (null when unlinked, or once it is deleted).
+   */
+  images: {
+    _id?: string;
+    image: string;
+    alt: string;
+    product?: { _id: string; name: string } | null;
+  }[];
 }
 
 /**
