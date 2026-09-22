@@ -36,12 +36,12 @@ export interface Product {
   name: string;
   category?: string;
   garmentType?: string;
-  collectionName?: string; // seasonal drop, e.g. "Onam" (backend field is `collectionName`)
+  collectionName?: string; // named drop, e.g. "Signature" (backend field is `collectionName`)
   season?: string;
   lifeMode?: string;
   editSection?: string; // "Within" | "Beyond" | "BELOVI Men" | "Archive"
   limited?: boolean;    // renders the "LIMITED PIECE" tag
-  materials?: string[]; // fabrics, e.g. ["Cotton", "Linen"] — drives the shop's Material filter
+  materials?: string[]; // e.g. ["Leather", "Wood"] — shown on the detail page, not a shop filter
   sizeChart?: SizeChartRow[]; // per-piece body measurements, in cm
   description?: string;
   keyFeatures?: string;
@@ -172,29 +172,23 @@ export function productTags(p: Product): ProductTag[] {
   return tags;
 }
 
+/**
+ * Can this piece be bought?
+ *
+ * `status` is free text on the model with "In Stock" as the default, so anything
+ * not recognisably in-stock counts as unavailable rather than trying to
+ * enumerate every phrase the studio might type.
+ */
+export function isInStock(status?: string): boolean {
+  return /in\s*stock/i.test((status || "").trim());
+}
+
 /** Indian rupee formatting: ₹18,500 */
 export function formatINR(amount: number): string {
   return "₹" + Math.round(amount).toLocaleString("en-IN");
 }
 
 // ─── Collection-page facets ──────────────────────────────────────────────────
-
-/**
- * The colourways a piece is offered in, deduplicated.
- *
- * Colour lives on the variant, not the product — a piece in three colourways is
- * one product with three variants — so the collection page's Color filter reads
- * from here rather than from a product-level field. No backend change was needed
- * for it; the data was already being stored.
- */
-export function productColors(p: Product): string[] {
-  const seen = new Set<string>();
-  for (const v of p.variants || []) {
-    const c = (v.color || "").trim();
-    if (c) seen.add(c.toLowerCase());
-  }
-  return [...seen];
-}
 
 export interface PriceBand {
   id: string;
@@ -277,21 +271,10 @@ export function inPriceBand(price: number, band: PriceBand): boolean {
 }
 
 /**
- * Swatch tones for colour names the design specifies.
- *
- * NOT a list of filter options — the Color filter is built from the colours the
- * catalogue actually carries. This only supplies an exact tone for names the
- * design pinned down; anything else falls through to the CSS colour keyword.
- *
- * The panel unions these with whatever the catalogue actually carries, so the
- * page matches the design on day one AND a fabric the studio types into a new
- * product still becomes a filter with no code change. An option nothing matches
- * renders disabled rather than hidden — the design shows a full panel, and a
- * checkbox that silently returns nothing is worse than one that says so.
+ * Swatch tones for colour names the design specifies — rendering only. Supplies
+ * an exact tone for names the design pinned down; anything else falls through
+ * to the CSS colour keyword. Used by the detail page's variant chips and Color.
  */
-
-
-/** The design's pinned tones. Rendering only — see above. */
 export const SWATCH_TONES: { name: string; swatch: string }[] = [
   { name: "Red", swatch: "#D32F2F" },
   { name: "Black", swatch: "#010101" },

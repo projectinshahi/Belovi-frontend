@@ -83,7 +83,7 @@ export default function ShippingPolicyPage() {
 
       <h2>9. Contact</h2>
       <p>
-        For any shipping query, write to care@belovi.in or message us on
+        For any shipping query, write to belovi2026@gmail.com or message us on
         WhatsApp. Our studio hours are Monday to Saturday, 10am to 6pm IST.
       </p>
     </LegalPage>

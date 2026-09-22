@@ -11,7 +11,7 @@ export async function generateMetadata(): Promise<Metadata> {
     title: about?.metaTitle || "About Us — BELOVI",
     description:
       about?.metaDescription ||
-      "The house behind BELOVI — company profile, vision, story and showroom.",
+      "The house behind BELOVI — who we are and what we make.",
   };
 }
 

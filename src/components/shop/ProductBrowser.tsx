@@ -16,8 +16,6 @@ import FilterSidebar, { type Facet, type FilterGroupSpec } from "./FilterSidebar
 import {
   type Product,
   fromPrice,
-  productColors,
-  colorSwatch,
   inPriceBand,
   priceBandsFor,
 } from "../../lib/product";
@@ -92,7 +90,7 @@ interface ProductBrowserProps {
  *
  * There used to be a fixed baseline here — the options the design drew — unioned
  * with whatever the products carried. That put permanent checkboxes on the panel
- * for materials and colours nothing was made of, and the ones that mattered were
+ * for values nothing carried, and the ones that mattered were
  * whichever the design happened to anticipate. An option now exists because a
  * product has that value, so adding, editing or deleting a piece in the admin
  * reshapes the filters on the next load with no deploy.
@@ -101,18 +99,14 @@ interface ProductBrowserProps {
  * option; the first spelling seen supplies the label. Sorted by frequency, then
  * alphabetically, so the most common values sit at the top of the list.
  */
-function facetsFrom(
-  values: string[],
-  countFor: (id: string) => number,
-  swatchFor?: (label: string) => string
-): Facet[] {
+function facetsFrom(values: string[], countFor: (id: string) => number): Facet[] {
   const byId = new Map<string, Facet>();
 
   for (const raw of values) {
     const label = (raw || "").trim();
     const id = slugify(label);
     if (!id || byId.has(id)) continue;
-    byId.set(id, { id, label, count: countFor(id), swatch: swatchFor?.(label) });
+    byId.set(id, { id, label, count: countFor(id) });
   }
 
   return [...byId.values()]
@@ -141,8 +135,6 @@ function BrowserContent({ scope, heading, breadcrumbLabel }: ProductBrowserProps
     initialCategory ? [initialCategory] : []
   );
   const [selectedPrices, setSelectedPrices] = useState<string[]>([]);
-  const [selectedMaterials, setSelectedMaterials] = useState<string[]>([]);
-  const [selectedColors, setSelectedColors] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState(initialSearch);
   const [sortBy, setSortBy] = useState("popularity");
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -167,7 +159,6 @@ function BrowserContent({ scope, heading, breadcrumbLabel }: ProductBrowserProps
       setProducts(
         json.data.map((p: Record<string, unknown>) => ({
           ...p,
-          materials: Array.isArray(p.materials) ? p.materials : [],
           description: p.keyFeatures || p.description || "",
         })) as Product[]
       );
@@ -273,25 +264,6 @@ function BrowserContent({ scope, heading, breadcrumbLabel }: ProductBrowserProps
     [scoped, priceBands]
   );
 
-  const materialFacets = useMemo(
-    () =>
-      facetsFrom(
-        scoped.flatMap((p) => p.materials || []),
-        (id) => scoped.filter((p) => (p.materials || []).some((m) => slugify(m) === id)).length
-      ),
-    [scoped]
-  );
-
-  const colorFacets = useMemo(
-    () =>
-      facetsFrom(
-        scoped.flatMap(productColors),
-        (id) => scoped.filter((p) => productColors(p).some((c) => slugify(c) === id)).length,
-        colorSwatch
-      ),
-    [scoped]
-  );
-
   // ── Filtering ─────────────────────────────────────────────────────────────
 
   const anyHasLifeMode = useMemo(() => scoped.some((p) => !!p.lifeMode), [scoped]);
@@ -309,14 +281,6 @@ function BrowserContent({ scope, heading, breadcrumbLabel }: ProductBrowserProps
 
       const priceOk = bands.length === 0 || bands.some((b) => inPriceBand(fromPrice(p), b));
 
-      const materialOk =
-        selectedMaterials.length === 0 ||
-        (p.materials || []).some((m) => selectedMaterials.includes(slugify(m)));
-
-      const colorOk =
-        selectedColors.length === 0 ||
-        productColors(p).some((c) => selectedColors.includes(slugify(c)));
-
       const searchOk =
         searchTerm === "" ||
         p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -331,7 +295,7 @@ function BrowserContent({ scope, heading, breadcrumbLabel }: ProductBrowserProps
         slugify(p.collectionName) === collectionSlug ||
         slugify(p.season) === collectionSlug;
 
-      return catOk && priceOk && materialOk && colorOk && searchOk && modeOk && collectionOk;
+      return catOk && priceOk && searchOk && modeOk && collectionOk;
     });
 
     switch (sortBy) {
@@ -351,8 +315,6 @@ function BrowserContent({ scope, heading, breadcrumbLabel }: ProductBrowserProps
     priceBands,
     selectedCategories,
     selectedPrices,
-    selectedMaterials,
-    selectedColors,
     searchTerm,
     sortBy,
     modeSlug,
@@ -387,9 +349,12 @@ function BrowserContent({ scope, heading, breadcrumbLabel }: ProductBrowserProps
       setPage(1);
     };
 
-  /* A group with no options is not rendered at all. That is the whole rule: a
-     catalogue with no materials recorded shows no Material filter, and one with
-     a single price shows no Price filter, rather than an empty panel section
+  /* Material and Color are deliberately NOT filters here — the studio still sets
+     them per piece in the admin, and the detail page shows them.
+
+     A group with no options is not rendered at all. That is the whole rule: a
+     catalogue with nothing filed under a category shows no Categories filter,
+     and one with a single price shows no Price filter, rather than an empty panel section
      the shopper has to read past to find out it is empty. */
   const groups: FilterGroupSpec[] = ([
     {
@@ -406,20 +371,6 @@ function BrowserContent({ scope, heading, breadcrumbLabel }: ProductBrowserProps
       selected: selectedPrices,
       onToggle: toggleIn(setSelectedPrices),
     },
-    {
-      key: "material",
-      title: "Material",
-      options: materialFacets,
-      selected: selectedMaterials,
-      onToggle: toggleIn(setSelectedMaterials),
-    },
-    {
-      key: "color",
-      title: "Color",
-      options: colorFacets,
-      selected: selectedColors,
-      onToggle: toggleIn(setSelectedColors),
-    },
   ] as FilterGroupSpec[]).filter((g) => g.options.length > 0);
 
   /** Every ticked box, flattened into the pill row, each able to remove itself. */
@@ -434,8 +385,6 @@ function BrowserContent({ scope, heading, breadcrumbLabel }: ProductBrowserProps
   const clearAll = () => {
     setSelectedCategories([]);
     setSelectedPrices([]);
-    setSelectedMaterials([]);
-    setSelectedColors([]);
     setSearchTerm("");
     setPage(1);
   };

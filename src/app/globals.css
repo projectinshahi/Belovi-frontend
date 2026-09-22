@@ -332,6 +332,44 @@ section[id] {
   animation-play-state: paused;
 }
 
+/* ── Video Showcase ────────────────────────────────────────────────────────
+   The rail's edges fade while it drifts, so cards slide in and out of the
+   panel rather than being cut off at a hard line. */
+.video-rail-fade {
+  --fade: clamp(1.25rem, 5vw, 5rem);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent);
+}
+
+/* The player. Sized to the smaller of the viewport's width and what a 16:9
+   frame can take of its height, so a landscape phone still shows the whole
+   player with its controls. */
+.video-dialog {
+  width: min(92vw, 1100px, calc((100dvh - 7rem) * 16 / 9));
+  max-width: none;
+  max-height: none;
+  margin: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+}
+/* A Short plays in a tall frame, sized the same way against the height. */
+.video-dialog.is-tall {
+  width: min(92vw, 460px, calc((100dvh - 7rem) * 9 / 16));
+}
+.video-dialog[open] {
+  animation: fadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.video-dialog::backdrop {
+  background: rgb(0 0 0 / 0.88);
+  backdrop-filter: blur(6px);
+}
+/* The page behind stays put while the player is open. */
+html:has(.video-dialog[open]) {
+  overflow: hidden;
+}
+
 /* ── Hero entrance ─────────────────────────────────────────────────────────
    Every one of these is a CSS animation rather than a JS-driven one, and that
    is the point: an element animated by framer server-renders at opacity:0 and
@@ -688,6 +726,10 @@ section[id] {
     animation-delay: 0ms !important;
     transition-duration: 0.001ms !important;
   }
+  /* Reveal ships a server-rendered `opacity:0` inline style. For a reduced
+     motion user nothing ever animates it back, so without this every revealed
+     section stays invisible permanently. */
+  .reveal { opacity: 1 !important; transform: none !important; }
   .marquee-track,
   .hero-float,
   .breathe,

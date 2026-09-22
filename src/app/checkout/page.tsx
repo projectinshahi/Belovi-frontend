@@ -135,8 +135,18 @@ export default function CheckoutPage() {
   };
 
   const subtotal = cartItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
-  const shipping = 0;
-  const total = Math.max(0, subtotal);
+
+  /* The rates published on /shipping-policy, applied. `shipping = 0` was
+     hardcoded here, so every order shipped free and the checkout contradicted
+     the policy page's own promise that "all charges are shown at checkout
+     before payment". Both numbers live in one place so the two cannot drift. */
+  const FREE_SHIPPING_THRESHOLD = 2499;
+  const FLAT_SHIPPING_FEE = 99;
+  const COD_HANDLING_FEE = 79;
+
+  const shipping = subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : FLAT_SHIPPING_FEE;
+  const codFee = paymentMethod === "cod" ? COD_HANDLING_FEE : 0;
+  const total = Math.max(0, subtotal + shipping + codFee);
 
   // Cash on Delivery requires a 10% advance paid online; the balance is collected on delivery.
   const ADVANCE_RATE = 0.1;
@@ -608,12 +618,23 @@ export default function CheckoutPage() {
                   </div>
                   <div className="flex justify-between items-center font-sans text-sm">
                     <span className="text-muted">Shipping</span>
-                    {/* `forest` (6.7:1) rather than the old #F43A45, which was
-                        3.5:1 — under AA for an 11px label. */}
-                    <span className="text-forest uppercase text-[11px] tracking-[0.14em]">
-                      Complimentary
-                    </span>
+                    {shipping === 0 ? (
+                      /* `forest` (6.7:1) rather than the old #F43A45, which was
+                         3.5:1 — under AA for an 11px label. */
+                      <span className="text-forest uppercase text-[11px] tracking-[0.14em]">
+                        Complimentary
+                      </span>
+                    ) : (
+                      <span className="text-ink">₹{shipping.toFixed(2)}</span>
+                    )}
                   </div>
+
+                  {codFee > 0 && (
+                    <div className="flex justify-between items-center font-sans text-sm">
+                      <span className="text-muted">Cash on delivery handling</span>
+                      <span className="text-ink">₹{codFee.toFixed(2)}</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="h-px bg-line mb-6" />

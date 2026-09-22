@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -134,12 +134,77 @@ export default function Navbar() {
     router.push("/sign-in");
   };
 
+  /**
+   * Search routing, debounced.
+   *
+   * This used to call `window.history.replaceState` while already on
+   * /products. That rewrote the address bar but did NOT update
+   * `useSearchParams()` — only a router navigation does — and ProductBrowser
+   * syncs its `searchTerm` from exactly that. The result: the first keystroke
+   * navigated and filtered, and every character after it moved the URL while
+   * the grid stayed frozen on the one-letter query.
+   *
+   * `router.replace` updates the params for real. `scroll: false` keeps the
+   * grid still while typing, and replace (not push) means a five-letter word
+   * leaves one history entry rather than five.
+   */
+  const commitSearch = useCallback(
+    (value: string) => {
+      const q = value.trim();
+      const url = q ? `/products?search=${encodeURIComponent(q)}` : "/products";
+      if (pathname === "/products") router.replace(url, { scroll: false });
+      else router.push(url);
+    },
+    [pathname, router]
+  );
+
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** Clear the pending route change; returns nothing, safe to call twice. */
+  const cancelPendingSearch = () => {
+    if (searchTimer.current) {
+      clearTimeout(searchTimer.current);
+      searchTimer.current = null;
+    }
+  };
+
+  /* The field updates on every keystroke; the route follows once typing pauses.
+     Routing per character would yank the reader to /products on the first
+     letter, mid-word, and re-run the filter five times for one search. */
   const runSearch = (value: string) => {
     setQuery(value);
-    const q = value.trim();
-    const url = q ? `/products?search=${encodeURIComponent(q)}` : "/products";
-    if (pathname === "/products") window.history.replaceState(null, "", url);
-    else router.push(url);
+    cancelPendingSearch();
+    searchTimer.current = setTimeout(() => commitSearch(value), 250);
+  };
+
+  /** Enter should not wait out the debounce. */
+  const submitSearch = () => {
+    cancelPendingSearch();
+    commitSearch(query);
+    setSearchOpen(false);
+  };
+
+  // A pending timer firing after unmount would route from a dead component.
+  useEffect(() => cancelPendingSearch, []);
+
+  /**
+   * Opening the drawer seeds the field from the URL it is about to edit.
+   *
+   * Without this the box opens empty on /products?search=sofa — showing nothing
+   * while the grid below is filtered — and pressing Enter would then commit that
+   * empty value and silently wipe the search the reader was looking at. Read off
+   * `location` rather than `useSearchParams`, which would force a Suspense
+   * boundary around the whole header.
+   */
+  const toggleSearch = () => {
+    setSearchOpen((open) => {
+      if (!open) {
+        setQuery(new URLSearchParams(window.location.search).get("search") ?? "");
+      } else {
+        cancelPendingSearch();
+      }
+      return !open;
+    });
   };
 
   const goHome = (e: React.MouseEvent) => {
@@ -269,7 +334,7 @@ export default function Navbar() {
           {/* RIGHT — search · bag · account */}
           <div className="flex flex-1 items-center justify-end gap-5 text-white sm:gap-6">
             <button
-              onClick={() => setSearchOpen((v) => !v)}
+              onClick={toggleSearch}
               aria-label="Search"
               aria-expanded={searchOpen}
               className="transition-colors duration-300 hover:text-brand"
@@ -316,7 +381,7 @@ export default function Navbar() {
               className="overflow-hidden border-t border-white/10 bg-onyx"
             >
               <form
-                onSubmit={(e) => { e.preventDefault(); setSearchOpen(false); }}
+                onSubmit={(e) => { e.preventDefault(); submitSearch(); }}
                 role="search"
                 className="section-x py-6"
               >

@@ -32,14 +32,34 @@ export default function Reveal({
   const reduce = useReducedMotion();
 
   if (reduce) {
+    /* `style` here is not decoration — it is the whole fix.
+     *
+     * There is no matchMedia on the server, so `useReducedMotion()` is false
+     * during SSR and the markup React hydrates ALWAYS carries the motion
+     * branch's initial state: `style="opacity:0;transform:translateY(30px)"`.
+     * When the client then decides reduced motion is on and returns a plain
+     * <div> with no `style` prop, React has nothing to reconcile against that
+     * attribute and leaves it exactly as the server wrote it. The result: every
+     * Reveal on the page stays permanently invisible — for precisely the users
+     * who asked for less motion. Declaring the style hands the property back to
+     * React, which then clears it. */
     return (
-      <div className={className}>{children}</div>
+      <div className={className} style={{ opacity: 1, transform: "none" }}>
+        {children}
+      </div>
     );
   }
 
   return (
     <motion.div
-      className={className}
+      /* `reveal` is a hook for the reduced-motion rule in globals.css. The
+         server always renders this branch (no matchMedia server-side), so the
+         inline `opacity:0` below ships in the HTML; if the client then decides
+         reduced motion is on, that inline style can outlive the swap and leave
+         the section invisible for good. The stylesheet overrides it with
+         `!important`, which works before hydration and regardless of what the
+         hook resolves to. */
+      className={`reveal ${className ?? ""}`}
       initial={{ opacity: 0, y, scale: scaleFrom ?? 1 }}
       whileInView={{ opacity: 1, y: 0, scale: 1 }}
       viewport={{ once: !repeat, margin: "0px 0px -12% 0px" }}

@@ -227,7 +227,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const removeItem = async (id: string, size?: string) => {
     setCartItems((prev) => {
-      const newCart = prev.filter((i) => i.id !== id);
+      /* Match on id AND size — the same identity key `addToCart` and
+         `updateQuantity` use. Filtering on id alone removed every colourway and
+         size of a piece when the shopper deleted one line, and the backend
+         DELETE below already scopes by size, so local and server then
+         disagreed until the next refresh put the other lines back. */
+      const newCart = prev.filter((i) => !(i.id === id && i.size === size));
       localStorage.setItem("belovi_cart", JSON.stringify(newCart));
       return newCart;
     });

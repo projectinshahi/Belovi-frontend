@@ -14,6 +14,7 @@ import {
   productImagePool,
   formatINR,
   productTags,
+  isInStock,
 } from "../../lib/product";
 
 /**
@@ -65,6 +66,7 @@ export default function ProductCard({
   const price = fromPrice(product);
   const oldPrice = fromOldPrice(product);
   const tags = productTags(product);
+  const inStock = isInStock(product.status);
   const primary = pool[0];
   const secondary = pool[1];
 
@@ -89,7 +91,7 @@ export default function ProductCard({
    * page rather than inventing a second rule for the same action.
    */
   const target = href ?? `/products/${product._id}`;
-  const canQuickAdd = !href && variants.length === 1 && price > 0;
+  const canQuickAdd = !href && variants.length === 1 && price > 0 && inStock;
 
   const handleCartClick = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -169,6 +171,15 @@ export default function ProductCard({
               BELOVI
             </span>
           </div>
+        )}
+
+        {/* Out of stock is flagged on the card, not just on the detail page —
+            otherwise the first a shopper knows of it is a dead button after a
+            click. Top-right so it never collides with the offer/limited chips. */}
+        {!inStock && (
+          <span className="absolute right-3 top-3 rounded-full bg-ink/85 px-2.5 py-1 font-sans text-[11px] leading-tight text-white backdrop-blur-sm">
+            Out of Stock
+          </span>
         )}
 
         {tags.length > 0 && (

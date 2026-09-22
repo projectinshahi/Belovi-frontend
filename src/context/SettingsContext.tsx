@@ -18,7 +18,7 @@ interface SiteSettings {
 // request lands shows the same values it will settle on.
 const defaultSettings: SiteSettings = {
   whatsappNumber: "917736830303",
-  contactEmail: "care@belovi.in",
+  contactEmail: "belovi2026@gmail.com",
   contactPhone: "",
   addressLine: "",
   instagramUrl: "https://www.instagram.com/belovi.in/",

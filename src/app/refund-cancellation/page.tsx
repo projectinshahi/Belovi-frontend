@@ -26,7 +26,7 @@ export default function RefundCancellationPage() {
           from our studio.
         </li>
         <li>
-          To cancel, email care@belovi.in or message us on WhatsApp with
+          To cancel, email belovi2026@gmail.com or message us on WhatsApp with
           your order ID as early as possible.
         </li>
         <li>
@@ -89,7 +89,7 @@ export default function RefundCancellationPage() {
       <h2>6. Contact</h2>
       <p>
         For any question about a cancellation or refund, write to
-        care@belovi.in. We aim to reply within one working day.
+        belovi2026@gmail.com. We aim to reply within one working day.
       </p>
     </LegalPage>
   );

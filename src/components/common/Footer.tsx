@@ -60,17 +60,24 @@ const Ic = {
  * with. Swap these three strings (and the social URLs below) for the real ones
  * before launch; they are all in this one block so it is a single edit.
  */
-const CONTACT = {
-  address: "2nd Floor, Emerald Arcade, MG Road, Kochi, Kerala 682035",
-  email: "hello@belovi.in",
-  phone: "+91 98470 12345",
-};
+/**
+ * Only the email is a constant — site-settings always carries one, and it is
+ * the studio's real address.
+ *
+ * The postal address and phone that used to live here were INVENTED
+ * placeholders ("2nd Floor, Emerald Arcade, MG Road…" / "+91 98470 12345") and
+ * they were being published to customers as if real: a dialable wrong number
+ * and a street address nobody occupies. They now come from Studio → Settings
+ * and are simply not rendered until the studio fills them in — an absent row is
+ * honest, a fabricated one is not.
+ */
+const FALLBACK_EMAIL = "belovi2026@gmail.com";
 
-/** Instagram is the studio's live account; the other two are placeholders. */
+/* Instagram only. The Facebook and X entries here were guessed URLs for
+   accounts that may not exist — a dead social link costs more trust than a
+   missing one. Add them back when the studio confirms the handles. */
 const SOCIALS = [
   { label: "Instagram", href: "https://www.instagram.com/belovi.in/", icon: Ic.instagram },
-  { label: "Facebook", href: "https://www.facebook.com/belovi.in", icon: Ic.facebook },
-  { label: "X", href: "https://x.com/belovi_in", icon: Ic.x },
 ];
 
 const NAV_LINKS = [
@@ -91,12 +98,9 @@ export default function Footer() {
       label: contactPhone,
       href: `tel:${contactPhone.replace(/[^\d+]/g, "")}`,
     },
-    contactEmail && {
-      icon: <Ic.mail width={22} height={22} />,
-      label: contactEmail,
-      href: `mailto:${contactEmail}`,
-      underline: true,
-    },
+    /* No email row here. The address is stated once, in the "Reach us" column
+       on the right, and repeating it in the left column put the same mailto:
+       twice in one footer. */
     addressLine && { icon: <Ic.pin width={22} height={22} />, label: addressLine },
   ].filter(Boolean) as {
     icon: React.ReactNode;
@@ -174,32 +178,38 @@ export default function Footer() {
                 Email and phone are `mailto:`/`tel:`, with the phone stripped to
                 digits because a dialler cannot parse spaces. */}
             <div className="flex flex-col gap-4">
+              {addressLine && (
               <p className="flex items-start gap-3 font-sans text-[15px] text-white/85 sm:text-[17px]">
                 <span className="mt-0.5 shrink-0 text-brand" aria-hidden>
                   <Ic.pin width={22} height={22} />
                 </span>
-                <span>{CONTACT.address}</span>
+                <span>{addressLine}</span>
               </p>
+              )}
 
               <a
-                href={`mailto:${CONTACT.email}`}
+                href={`mailto:${contactEmail || FALLBACK_EMAIL}`}
                 className={`flex items-center gap-3 ${linkClass}`}
               >
                 <span className="shrink-0 text-brand" aria-hidden>
                   <Ic.mail width={22} height={22} />
                 </span>
-                <span className="underline underline-offset-4">{CONTACT.email}</span>
+                <span className="underline underline-offset-4">
+                  {contactEmail || FALLBACK_EMAIL}
+                </span>
               </a>
 
+              {contactPhone && (
               <a
-                href={`tel:${CONTACT.phone.replace(/[^\d+]/g, "")}`}
+                href={`tel:${contactPhone.replace(/[^\d+]/g, "")}`}
                 className={`flex items-center gap-3 ${linkClass}`}
               >
                 <span className="shrink-0 text-brand" aria-hidden>
                   <Ic.phone width={22} height={22} />
                 </span>
-                <span>{CONTACT.phone}</span>
+                <span>{contactPhone}</span>
               </a>
+              )}
 
               {/* Icon-only, so each carries its own accessible name. */}
               <div className="mt-1 flex items-center gap-4">

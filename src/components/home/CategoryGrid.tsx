@@ -82,8 +82,17 @@ export default function CategoryGrid() {
      artwork and shaped as products. They rendered as real catalogue rows, could
      not be edited or removed from the admin, and pushed the studio's own pieces
      out of a four-slot row. */
+  /* Within the chosen category, pieces the studio flagged "Show on landing
+     page" come first, then the rest in catalogue order.
+     `showOnLandingPage` was stored on the model, offered in the admin product
+     form and typed on the frontend — and read by nothing, so the toggle did
+     nothing at all. Ordering rather than filtering: a category where nothing is
+     flagged still fills its row instead of emptying. */
   const shown = active
-    ? (products ?? []).filter((p) => p.category === active).slice(0, VISIBLE)
+    ? (products ?? [])
+        .filter((p) => p.category === active)
+        .sort((a, b) => Number(!!b.showOnLandingPage) - Number(!!a.showOnLandingPage))
+        .slice(0, VISIBLE)
     : [];
 
   // Only a genuinely empty grid waits. The showcase is local, so a category it

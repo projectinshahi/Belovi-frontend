@@ -137,9 +137,9 @@ function RegisterContent() {
         {/* Scrim keeps the type legible over any photograph. */}
         <div className="absolute inset-0 bg-gradient-to-t from-ink/75 via-ink/25 to-transparent" />
         <div className="absolute inset-x-0 bottom-0 p-6 sm:p-8 md:p-14 lg:p-20 pointer-events-none">
-          <p className="eyebrow text-ivory/85 mb-3">The Onam Collection · 2026</p>
+          <p className="eyebrow text-ivory/85 mb-3">The Belovi Collection · 2026</p>
           <p className="font-display font-light text-xl sm:text-2xl md:text-3xl leading-[1.15] text-ivory max-w-sm">
-            Made for 32°C, humidity, and monsoon. Named for the flowers of Kerala.
+            Sculptural furniture, made for the way a room is actually lived in.
           </p>
         </div>
       </div>

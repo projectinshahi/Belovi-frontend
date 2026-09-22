@@ -4,11 +4,11 @@ import { apiBase } from "./story";
  * The About Us page content, as authored in the studio.
  *
  * One singleton: a banner plus four blocks — company profile, story, vision,
- * showroom — matching the four alternating rows of the design.
+ * showroom. Only the banner and the company-profile block are drawn now.
  *
- * Several fields here are no longer drawn on the page (the eyebrows,
- * `visionPoints`, the showroom address/hours/map): the redesign has no place for
- * them. They stay on the interface because they stay in the database and in the
+ * Several fields here are no longer drawn on the page (the story, vision and
+ * showroom blocks, the eyebrows, `visionPoints`, the showroom address/hours/map).
+ * They were removed on request or the redesign has no place for them. They stay on the interface because they stay in the database and in the
  * studio form, so no authored copy is silently dropped.
  *
  * Every field is optional; each block on the page omits itself when its content

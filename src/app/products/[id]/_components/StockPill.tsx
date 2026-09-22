@@ -10,10 +10,10 @@
  * as a warning, because the buttons are disabled alongside it.
  */
 
-/** The single source of truth for "can this be bought", used by the page too. */
-export function isInStock(status?: string): boolean {
-  return /in\s*stock/i.test((status || "").trim());
-}
+/* Lives in lib/product.ts now — the listing cards need it too, and two copies
+   of "is this buyable" is exactly the pair that drifts apart. */
+import { isInStock } from "../../../../lib/product";
+export { isInStock };
 
 export default function StockPill({ status }: { status?: string }) {
   const label = (status || "").trim() || "Unavailable";

@@ -51,7 +51,7 @@ export default function ReturnsExchangesPage() {
       <h2>How it works</h2>
       <ul>
         <li>
-          Write to care@belovi.in or message us on WhatsApp with your
+          Write to belovi2026@gmail.com or message us on WhatsApp with your
           order ID and the reason for the return or exchange.
         </li>
         <li>

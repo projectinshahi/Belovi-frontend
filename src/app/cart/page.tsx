@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Breadcrumbs from "../../components/common/Breadcrumbs";
+import { formatINR } from "../../lib/product";
 
 import { useCart } from "../../context/CartContext";
 import { ButtonLink } from "../../components/ui/Button";
@@ -37,7 +38,7 @@ export default function CartPage() {
                 Your cart is empty
               </h2>
               <p className="text-muted max-w-md mb-8 font-sans leading-relaxed">
-                Explore the Onam Collection and add the pieces you love. They will be
+                Explore the collection and add the pieces you love. They will be
                 waiting here when you are ready.
               </p>
               <ButtonLink href="/products" variant="outline" size="md">
@@ -141,7 +142,7 @@ export default function CartPage() {
                   <div className="space-y-4">
                     <div className="flex justify-between items-center font-sans text-sm">
                       <span className="text-muted">Subtotal</span>
-                      <span className="text-ink">₹{subtotal}</span>
+                      <span className="text-ink">{formatINR(subtotal)}</span>
                     </div>
                     <div className="flex justify-between items-center font-sans text-sm">
                       <span className="text-muted">Shipping</span>
@@ -155,7 +156,7 @@ export default function CartPage() {
 
                   <div className="flex justify-between items-baseline mb-8">
                     <span className="font-sans text-sm uppercase tracking-[0.14em] text-ink">Total</span>
-                    <span className="font-display font-light text-3xl text-ink">₹{total}</span>
+                    <span className="font-display font-light text-3xl text-ink">{formatINR(total)}</span>
                   </div>
 
                   <ButtonLink

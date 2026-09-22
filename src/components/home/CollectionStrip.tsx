@@ -3,6 +3,8 @@
 import Reveal from "../ui/Reveal";
 import MagneticCta from "../ui/MagneticCta";
 import type { FeaturedCollection } from "../../lib/featured";
+import type { CollectionSection } from "../../lib/collection";
+import { cldOptimize } from "../../lib/image";
 
 /**
  * The Collection band — the gallery-light break after the black hero.
@@ -22,26 +24,22 @@ import type { FeaturedCollection } from "../../lib/featured";
  * stops it outright (globals.css) — leaving a legible static row rather than a
  * half-empty one.
  *
- * FIXED CONTENT. Both the imagery and the copy are brand art direction rather
- * than catalogue data — one lifestyle plate, three colourways of a single piece,
- * and the flagship's own story. The Featured Collection document used to supply
- * the heading and body, which meant an unrelated edit there rewrote this band;
- * it now only decides whether the section shows at all.
+ * CONTENT. The heading, description, main image and the scrolling images come
+ * from the studio's Collection Section (Admin → Collection Section), its own
+ * document, so edits elsewhere cannot rewrite this band. The Featured Collection
+ * document still only decides whether the section shows at all.
  */
 
-const HEADING = "Collection";
-const BODY =
-  "Tantra Chair a sculptural statement piece designed to bring comfort, elegance, and versatility into your space. Its distinctive curves provide a supportive, relaxing form while adding a bold contemporary touch to any interior. Crafted for both visual appeal and everyday comfort, the Tantra Chair turns every moment of sitting into a refined experience.";
+/** The white plate every scrolling image stands on. */
+const PLATE = "/images/Rectangle%208%20(2).png";
 
-/** The design's own art, always rendered. */
-const LIFESTYLE = "/images/Component 6.png";
-const COLOURWAYS = [
-  { src: "/images/Group 4.png", label: "Tantra Chair in off-white" },
-  { src: "/images/Group 2.png", label: "Tantra Chair in magenta" },
-  { src: "/images/Group 2 (1).png", label: "Tantra Chair in tangerine" },
-];
-
-export default function CollectionStrip({ data }: { data: FeaturedCollection | null }) {
+export default function CollectionStrip({
+  data,
+  content,
+}: {
+  data: FeaturedCollection | null;
+  content: CollectionSection;
+}) {
   if (data && !data.isVisible) return null;
 
   return (
@@ -52,8 +50,8 @@ export default function CollectionStrip({ data }: { data: FeaturedCollection | n
           <div className="sheen group relative aspect-[4/3] w-full overflow-hidden rounded-[20px] bg-sand sm:aspect-[645/746] sm:rounded-[clamp(24px,2.5vw,48px)]">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={LIFESTYLE}
-              alt="The BELOVI collection"
+              src={cldOptimize(content.mainImage, 1300)}
+              alt={content.heading}
               loading="lazy"
               className="h-full w-full object-cover object-bottom transition-transform duration-[900ms] ease-[cubic-bezier(0.25,0.46,0.45,0.94)] group-hover:scale-[1.03]"
             />
@@ -63,9 +61,9 @@ export default function CollectionStrip({ data }: { data: FeaturedCollection | n
         {/* Content stack */}
         <div className="flex min-w-0 flex-col gap-9 lg:gap-12">
           <Reveal>
-            <h2 className="display-section text-ink">{HEADING}</h2>
-            <p className="mt-5 max-w-[560px] text-body leading-[1.7] text-muted">
-              {BODY}
+            <h2 className="display-section text-ink">{content.heading}</h2>
+            <p className="mt-5 max-w-[560px] whitespace-pre-line text-body leading-[1.7] text-muted">
+              {content.description}
             </p>
           </Reveal>
 
@@ -85,8 +83,8 @@ export default function CollectionStrip({ data }: { data: FeaturedCollection | n
                     aria-hidden={copy === 1}
                     className="flex shrink-0 items-center gap-6 sm:gap-8"
                   >
-                    {COLOURWAYS.map((c) => (
-                      <Colourway key={`${copy}-${c.src}`} src={c.src} label={c.label} />
+                    {content.images.map((c, i) => (
+                      <Colourway key={`${copy}-${c._id ?? i}`} src={c.image} label={c.alt} />
                     ))}
                   </div>
                 ))}
@@ -114,27 +112,41 @@ export default function CollectionStrip({ data }: { data: FeaturedCollection | n
 }
 
 /**
- * One colourway, drawn exactly as supplied.
+ * One scrolling image: the product cut-out standing on the shared white plate.
  *
- * NOTHING IS RENDERED BEHIND THE IMAGE. This used to lay a cream plinth under
- * each one — a rounded `bg-cream` rectangle the piece appeared to rest on — but
- * the supplied artwork carries its own white ground, so the plinth showed as a
- * second, differently-toned panel stacked behind it.
+ * The plate is drawn HERE, from the one supplied asset, so an image uploaded in
+ * the admin needs no background of its own and every item matches. The
+ * geometry was measured off the original artwork, where the plate was baked
+ * into each file: the product spans about 1.2× the plate's width, centred on it,
+ * with its base a little above the plate's foot. As one box, that is a 1.7:1
+ * frame with the plate across the bottom 83% of its width (centred) and the
+ * product fitted (`object-contain`, so never cropped) into the full width above
+ * an 11% foot.
  *
- * `object-contain` is kept, which is what guarantees the file is never cropped:
- * the whole image is fitted inside the box and its aspect ratio preserved.
+ * The frame is bottom-aligned in the same slot sizes as before, so the marquee's
+ * rhythm and speed are unchanged.
  */
 function Colourway({ src, label }: { src: string; label: string }) {
   return (
-    <div className="h-[160px] w-[260px] shrink-0 sm:h-[200px] sm:w-[330px] lg:h-[230px] lg:w-[390px]">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={src}
-        alt={label}
-        loading="lazy"
-        draggable={false}
-        className="h-full w-full select-none object-contain"
-      />
+    <div className="flex h-[160px] w-[260px] shrink-0 items-end sm:h-[200px] sm:w-[330px] lg:h-[230px] lg:w-[390px]">
+      <div className="relative aspect-[1.7] w-full select-none">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={PLATE}
+          alt=""
+          aria-hidden
+          draggable={false}
+          className="absolute bottom-0 left-[8.33%] w-[83.33%]"
+        />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={cldOptimize(src, 800)}
+          alt={label}
+          loading="lazy"
+          draggable={false}
+          className="absolute inset-x-0 top-0 h-[88.9%] w-full object-contain object-bottom"
+        />
+      </div>
     </div>
   );
 }

@@ -12,7 +12,7 @@ import { Button } from "../../../components/ui/Button";
 import { Skeleton } from "../../../components/ui/States";
 import { useCart } from "../../../context/CartContext";
 import { isSignedIn, signInHref } from "../../../lib/auth";
-import { formatINR, type Product as CardProduct } from "../../../lib/product";
+import { formatINR, colorSwatch, type Product as CardProduct } from "../../../lib/product";
 import Gallery from "./_components/Gallery";
 /* `isInStock` only — the StockPill badge is no longer shown on this page.
    Availability itself is unchanged: it still disables the purchase buttons and
@@ -69,6 +69,8 @@ interface Product {
   images: string[];
   /** Short selling points the studio typed, one per line, in its order. */
   features: string[];
+  /** Product-level materials from the admin — the fallback when a variant names none. */
+  materials: string[];
   variants: Variant[];
   /** Curated in the admin. These LEAD the suggestion rail; peers fill the rest. */
   relatedProducts: CardProduct[];
@@ -114,6 +116,7 @@ export default function ProductDetailPage() {
         status: p.status || "",
         images: (p.images || []).filter(Boolean),
         features: ((p.features as string[]) || []).map((f) => (f || "").trim()).filter(Boolean),
+        materials: ((p.materials as string[]) || []).map((m) => (m || "").trim()).filter(Boolean),
         variants: (p.variants || []).map((v: Record<string, unknown>) => ({
           size: (v.size as string) || "",
           color: (v.color as string) || "",
@@ -263,6 +266,11 @@ export default function ProductDetailPage() {
       ? currentVariant.oldPrice
       : undefined;
   const discountPct = oldPrice ? Math.round(((oldPrice - price) / oldPrice) * 100) : 0;
+
+  /* The selected variant's own values lead, so switching options updates them;
+     a variant with no material falls back to the product's Materials list. */
+  const material = currentVariant?.material || product.materials.join(", ");
+  const color = currentVariant?.color || "";
 
   const inStock = isInStock(product.status);
   const busy = isAdding || isBuying;
@@ -465,6 +473,32 @@ export default function ProductDetailPage() {
               </Reveal>
             )}
 
+            {(material || color) && (
+              <Reveal y={24} delay={0.43}>
+                <dl className="flex max-w-[480px] flex-col gap-[8px] font-sans text-[15px] sm:text-[16px]">
+                  {material && (
+                    <div className="flex gap-[8px]">
+                      <dt className="text-[#9E9E9E]">Material:</dt>
+                      <dd className="min-w-0 break-words capitalize text-[#1A1A1A]">{material}</dd>
+                    </div>
+                  )}
+                  {color && (
+                    <div className="flex items-center gap-[8px]">
+                      <dt className="text-[#9E9E9E]">Color:</dt>
+                      <dd className="inline-flex min-w-0 items-center gap-[8px] capitalize text-[#1A1A1A]">
+                        <span
+                          aria-hidden
+                          className="h-4 w-4 shrink-0 rounded-full border border-line"
+                          style={{ background: colorSwatch(color) }}
+                        />
+                        <span className="break-words">{color}</span>
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+              </Reveal>
+            )}
+
             <Reveal y={24} delay={0.44}>
               <VariantSelector
                 variants={product.variants}
@@ -496,6 +530,18 @@ export default function ProductDetailPage() {
               delay={0.52}
               className="flex flex-col gap-[12px] sm:flex-row sm:flex-wrap sm:items-center sm:gap-[16px] mt-[16px]"
             >
+              {/* Say WHY the controls are dead. Disabling Add to Cart and Buy Now
+                  without a word reads as a broken page rather than as a piece
+                  that is unavailable. `role="status"` so it is announced too. */}
+              {!inStock && (
+                <p
+                  role="status"
+                  className="w-full rounded-[8px] bg-[#F0F0F0] px-4 py-2.5 font-sans text-[14px] font-medium text-[#1A1A1A]"
+                >
+                  Out of Stock — this piece is currently unavailable.
+                </p>
+              )}
+
               <QuantityStepper
                 value={quantity}
                 max={MAX_QTY}

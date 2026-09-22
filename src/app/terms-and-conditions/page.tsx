@@ -108,7 +108,7 @@ export default function TermsAndConditionsPage() {
       </p>
       <p>
         Email:{" "}
-        <a href="mailto:care@belovi.in">care@belovi.in</a>
+        <a href="mailto:belovi2026@gmail.com">belovi2026@gmail.com</a>
       </p>
     </LegalPage>
   );
