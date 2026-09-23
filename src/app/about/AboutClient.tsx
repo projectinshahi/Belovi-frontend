@@ -5,7 +5,7 @@ import AboutHero from "../../components/about/AboutHero";
 import AboutBlock from "../../components/about/AboutBlock";
 import type { AboutPage } from "../../lib/about";
 
-/*******
+/****************
  * About Us — rebuilt to the Figma frame (node 58:1313).
  *
  * A black page lit by red glows, a photographic banner, then one row of copy
