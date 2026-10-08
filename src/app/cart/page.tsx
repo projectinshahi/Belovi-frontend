@@ -144,12 +144,6 @@ export default function CartPage() {
                       <span className="text-muted">Subtotal</span>
                       <span className="text-ink">{formatINR(subtotal)}</span>
                     </div>
-                    <div className="flex justify-between items-center font-sans text-sm">
-                      <span className="text-muted">Shipping</span>
-                      <span className="text-forest uppercase text-[11px] tracking-[0.14em]">
-                        Complimentary
-                      </span>
-                    </div>
                   </div>
 
                   <div className="h-px bg-line my-6" />

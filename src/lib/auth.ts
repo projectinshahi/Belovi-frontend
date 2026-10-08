@@ -33,9 +33,44 @@ export function saveSession(session: Session): void {
   localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
 }
 
+/**
+ * Drop the stored session — on logout, or when the backend rejects its token.
+ * The local cart goes too, exactly as logout clears it: it mirrors the account's
+ * server cart, and left behind it would be merged back in as a "guest" cart on
+ * the next sign-in, doubling every line.
+ */
+export function clearSession(): void {
+  localStorage.removeItem(AUTH_STORAGE_KEY);
+  localStorage.removeItem("belovi_cart");
+}
+
+/**
+ * The session's token, or null when there is no usable one.
+ *
+ * A JWT past its `exp` is cleared here rather than returned: the backend can
+ * only 401 it, and while it sat in storage every reader treated the dead
+ * session as signed in — the navbar, the cart sync, Buy Now — so each request
+ * failed instead of sending the shopper to sign in.
+ */
+export function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    const token: string = JSON.parse(raw).token;
+    const payload = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const { exp } = JSON.parse(atob(payload));
+    if (!exp || exp * 1000 > Date.now()) return token;
+  } catch {
+    // Unparseable session or token — as unusable as an expired one.
+  }
+  clearSession();
+  return null;
+}
+
 /** Is someone signed in? The one place that question is asked of storage. */
 export function isSignedIn(): boolean {
-  return typeof window !== "undefined" && Boolean(localStorage.getItem(AUTH_STORAGE_KEY));
+  return getToken() !== null;
 }
 
 // ─── Returning to where you were ─────────────────────────────────────────────
