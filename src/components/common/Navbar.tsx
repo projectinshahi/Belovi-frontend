@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useCart } from "../../context/CartContext";
 import Logo from "../ui/Logo";
 import { useCategories } from "../../lib/categories";
+import { isSignedIn } from "../../lib/auth";
 
 /**
  * The Figma header: a solid black bar (not the old floating ivory pill), the
@@ -98,7 +99,7 @@ export default function Navbar() {
   };
 
   useEffect(() => {
-    setIsLoggedIn(!!localStorage.getItem("belovi_user"));
+    setIsLoggedIn(isSignedIn());
     setMobileOpen(false);
     if (pathname !== "/products") setSearchOpen(false);
   }, [pathname]);

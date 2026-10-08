@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import axios from "axios";
+import { getToken, clearSession } from "../lib/auth";
 
 export interface CartItem {
   id: string;
@@ -45,20 +46,6 @@ const getApiUrl = () => {
     ? process.env.NEXT_PUBLIC_API_URL.replace(/\/api\/?$/, "")
     : "http://localhost:5000";
   return `${baseUrl}/api/v1`;
-};
-
-const getToken = (): string | null => {
-  if (typeof window !== "undefined") {
-    const userStr = localStorage.getItem("belovi_user");
-    if (userStr) {
-      try {
-        return JSON.parse(userStr).token ?? null;
-      } catch {
-        return null;
-      }
-    }
-  }
-  return null;
 };
 
 const readLocalCart = (): CartItem[] => {
@@ -118,6 +105,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem("belovi_cart", JSON.stringify(items));
       }
     } catch (err) {
+      // Token rejected for a reason the expiry check can't see (user deleted,
+      // secret rotated): drop the session so the shopper is asked to sign in.
+      if (axios.isAxiosError(err) && err.response?.status === 401) {
+        clearSession();
+        setCartItems([]);
+        return;
+      }
       console.error("Failed to refresh cart from backend", err);
     }
   }, []);

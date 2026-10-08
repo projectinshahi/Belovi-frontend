@@ -9,6 +9,7 @@ import { useCart } from "../../context/CartContext";
 import { Button } from "../../components/ui/Button";
 import Reveal from "../../components/ui/Reveal";
 import Breadcrumbs from "../../components/common/Breadcrumbs";
+import { isSignedIn } from "../../lib/auth";
 
 interface UserProfile {
   name: string;
@@ -83,8 +84,8 @@ export default function ProfilePage() {
         }
       }
 
-      // Load user from localStorage
-      const savedUser = localStorage.getItem("belovi_user");
+      // Load user from localStorage — an expired session counts as signed out
+      const savedUser = isSignedIn() && localStorage.getItem("belovi_user");
       if (savedUser) {
         setUser(JSON.parse(savedUser));
       } else {

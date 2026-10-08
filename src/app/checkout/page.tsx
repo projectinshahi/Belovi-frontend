@@ -9,6 +9,7 @@ import { useToast } from "../../context/ToastContext";
 import { Button } from "../../components/ui/Button";
 import Reveal from "../../components/ui/Reveal";
 import { cldOptimize } from "../../lib/image";
+import { getToken } from "../../lib/auth";
 
 export default function CheckoutPage() {
   const { cartItems, clearCart } = useCart();
@@ -37,9 +38,7 @@ export default function CheckoutPage() {
   useEffect(() => {
     const fetchAddresses = async () => {
       try {
-        const userStr = localStorage.getItem("belovi_user");
-        if (!userStr) return;
-        const { token } = JSON.parse(userStr);
+        const token = getToken();
         if (!token) return;
 
         const baseUrl = process.env.NEXT_PUBLIC_API_URL ? process.env.NEXT_PUBLIC_API_URL.replace(/\/api\/?$/, "") : 'http://localhost:5000';
@@ -82,14 +81,13 @@ export default function CheckoutPage() {
     setIsSavingAddress(true);
 
     try {
-      const userStr = localStorage.getItem("belovi_user");
-      if (!userStr) {
+      const token = getToken();
+      if (!token) {
         showToast("Please login to save your address.", "warning");
         setIsSavingAddress(false);
         return;
       }
 
-      const { token } = JSON.parse(userStr);
       const baseUrl = process.env.NEXT_PUBLIC_API_URL ? process.env.NEXT_PUBLIC_API_URL.replace(/\/api\/?$/, "") : 'http://localhost:5000';
       const API_URL = `${baseUrl}/api`;
 
@@ -136,17 +134,11 @@ export default function CheckoutPage() {
 
   const subtotal = cartItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
 
-  /* The rates published on /shipping-policy, applied. `shipping = 0` was
-     hardcoded here, so every order shipped free and the checkout contradicted
-     the policy page's own promise that "all charges are shown at checkout
-     before payment". Both numbers live in one place so the two cannot drift. */
-  const FREE_SHIPPING_THRESHOLD = 2499;
-  const FLAT_SHIPPING_FEE = 99;
+  // Shipping is not charged. Cash on delivery keeps its handling fee.
   const COD_HANDLING_FEE = 79;
 
-  const shipping = subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : FLAT_SHIPPING_FEE;
   const codFee = paymentMethod === "cod" ? COD_HANDLING_FEE : 0;
-  const total = Math.max(0, subtotal + shipping + codFee);
+  const total = Math.max(0, subtotal + codFee);
 
   // Cash on Delivery requires a 10% advance paid online; the balance is collected on delivery.
   const ADVANCE_RATE = 0.1;
@@ -186,12 +178,9 @@ export default function CheckoutPage() {
 
   // Shared helpers for building the order payload sent to the backend.
   const getAuthToken = (): string | null => {
-    const userStr = localStorage.getItem("belovi_user");
-    if (!userStr) {
-      showToast("Please login to proceed.", "warning");
-      return null;
-    }
-    return JSON.parse(userStr).token;
+    const token = getToken();
+    if (!token) showToast("Please login to proceed.", "warning");
+    return token;
   };
 
   const buildOrderPayload = () => {
@@ -263,7 +252,6 @@ export default function CheckoutPage() {
         shippingAddress: orderShippingAddress,
         subtotal,
         discount: 0,
-        shippingFee: shipping,
         total,
         paymentMethod: method,
         // For COD, record how much was paid now and how much is due on delivery.
@@ -310,7 +298,7 @@ export default function CheckoutPage() {
       }
 
       const options = {
-        key: key_id || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_YourTestKey", // Use backend key first to guarantee match
+        key: key_id, // Always the backend's key, so it matches the key that created the order
         amount: razorpayOrder.amount,
         currency: razorpayOrder.currency,
         name: "Neokart",
@@ -616,19 +604,6 @@ export default function CheckoutPage() {
                     <span className="text-muted">Subtotal</span>
                     <span className="text-ink">₹{subtotal.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between items-center font-sans text-sm">
-                    <span className="text-muted">Shipping</span>
-                    {shipping === 0 ? (
-                      /* `forest` (6.7:1) rather than the old #F43A45, which was
-                         3.5:1 — under AA for an 11px label. */
-                      <span className="text-forest uppercase text-[11px] tracking-[0.14em]">
-                        Complimentary
-                      </span>
-                    ) : (
-                      <span className="text-ink">₹{shipping.toFixed(2)}</span>
-                    )}
-                  </div>
-
                   {codFee > 0 && (
                     <div className="flex justify-between items-center font-sans text-sm">
                       <span className="text-muted">Cash on delivery handling</span>
