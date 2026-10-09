@@ -92,60 +92,17 @@ const linkClass =
 export default function Footer() {
   const { whatsappNumber, contactEmail, contactPhone, addressLine } = useSettings();
 
-  const contactRows = [
-    contactPhone && {
-      icon: <Ic.phone width={22} height={22} />,
-      label: contactPhone,
-      href: `tel:${contactPhone.replace(/[^\d+]/g, "")}`,
-    },
-    /* No email row here. The address is stated once, in the "Reach us" column
-       on the right, and repeating it in the left column put the same mailto:
-       twice in one footer. */
-    addressLine && { icon: <Ic.pin width={22} height={22} />, label: addressLine },
-  ].filter(Boolean) as {
-    icon: React.ReactNode;
-    label: string;
-    href?: string;
-    underline?: boolean;
-  }[];
-
   return (
     <footer className="surface-dark w-full bg-onyx-soft text-ink">
       <div className="section-x section-pad">
         <div className="section-inner">
-          <Reveal className="grid grid-cols-1 gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr] lg:gap-16">
-            {/* Contact */}
-            <div className="flex flex-col gap-4">
-              {contactRows.map((row) => {
-                const body = (
-                  <>
-                    <span className="shrink-0 text-brand" aria-hidden>{row.icon}</span>
-                    <span className={row.underline ? "underline underline-offset-4" : ""}>
-                      {row.label}
-                    </span>
-                  </>
-                );
-                return row.href ? (
-                  <a key={row.label} href={row.href} className={`flex items-center gap-3 ${linkClass}`}>
-                    {body}
-                  </a>
-                ) : (
-                  <p key={row.label} className="flex items-center gap-3 font-sans text-[15px] text-white/85 sm:text-[17px]">
-                    {body}
-                  </p>
-                );
-              })}
-            </div>
+          <Reveal className="grid grid-cols-1 gap-10 sm:grid-cols-2 lg:gap-16">
+            {/* Site, then WhatsApp beneath it — the first column, flush left.
 
-            {/* Site, then WhatsApp beneath it — occupying the space the three
-                customer-care links used to fill.
-
-                The grid still declares THREE tracks even though two cells are
-                now filled: that keeps this column at exactly the width and
-                position it already had, which is what makes the change read as
-                the links moving into the vacated space rather than the whole
-                footer being re-proportioned. The third track is left as the
-                trailing whitespace the large wordmark below sits against.
+                The separate contact column that used to sit before this one only
+                ever held the phone and address, both already in "Reach us" — so
+                it either repeated them or rendered empty and pushed these links
+                off the left edge.
 
                 `gap-3` inside and out, so the four items are evenly spaced and
                 WhatsApp sits on the same rhythm as the links above it. It stays
@@ -169,17 +126,16 @@ export default function Footer() {
               </a>
             </div>
 
-            {/* Reach us — the third column, previously the trailing whitespace.
-                Same icon-beside-text rows as the contact column on the left, so
-                the two read as one system rather than two treatments of the same
-                kind of information.
+            {/* Reach us — the second column, flush right from `sm` up so the two
+                columns frame the footer edge to edge. On phones it stacks under
+                the links and stays left-aligned with them.
 
                 The address is a `<p>`, not a link: there is nowhere for it to go.
                 Email and phone are `mailto:`/`tel:`, with the phone stripped to
                 digits because a dialler cannot parse spaces. */}
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-4 sm:items-end">
               {addressLine && (
-              <p className="flex items-start gap-3 font-sans text-[15px] text-white/85 sm:text-[17px]">
+              <p className="flex items-start gap-3 font-sans text-[15px] text-white/85 sm:text-right sm:text-[17px]">
                 <span className="mt-0.5 shrink-0 text-brand" aria-hidden>
                   <Ic.pin width={22} height={22} />
                 </span>
