@@ -1,3 +1,5 @@
+import type { ImageLoaderProps } from "next/image";
+
 // Backend origin (strip a trailing /api) — where locally-uploaded /uploads/* live.
 const BACKEND_ORIGIN = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000").replace(
   /\/api\/?$/,
@@ -49,3 +51,10 @@ export function cldOptimize(url: string, width: number): string {
   }
   return `${prefix}/upload/f_auto,q_auto:good,w_${width}/${rest}`;
 }
+
+/**
+ * `next/image` loader: Cloudinary does the resizing, one URL per srcset width,
+ * so the image is never optimised twice and backend `/uploads/*` paths need no
+ * `remotePatterns` entry.
+ */
+export const cldLoader = ({ src, width }: ImageLoaderProps) => cldOptimize(src, width);

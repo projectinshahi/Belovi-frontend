@@ -1,21 +1,39 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import Link from "next/link";
+import Image from "next/image";
 import Breadcrumbs from "../../components/common/Breadcrumbs";
 import axios from "axios";
 import { useCart } from "../../context/CartContext";
 import { useToast } from "../../context/ToastContext";
 import { Button } from "../../components/ui/Button";
 import Reveal from "../../components/ui/Reveal";
-import { cldOptimize } from "../../lib/image";
-import { getToken } from "../../lib/auth";
+import { cldLoader } from "../../lib/image";
+import { getToken, authErrorMessage } from "../../lib/auth";
+
+type ApiAddress = { _id: string; street?: string; city?: string; state?: string; zipCode?: string };
+type Address = { id: string; name: string; line1: string; line2?: string };
+
+const toAddress = (addr: ApiAddress): Address => ({
+  id: addr._id,
+  name: addr.city?.toLowerCase() || 'Address',
+  line1: `${addr.street ? addr.street + ", " : ""}${addr.state?.toLowerCase() || ''}`,
+  line2: addr.zipCode,
+});
+
+type RazorpayResponse = { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string };
+
+declare global {
+  interface Window {
+    Razorpay: new (options: object) => { on(event: string, cb: () => void): void; open(): void };
+  }
+}
 
 export default function CheckoutPage() {
   const { cartItems, clearCart } = useCart();
   const { showToast } = useToast();
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
-  const [addresses, setAddresses] = useState<any[]>([]);
+  const [addresses, setAddresses] = useState<Address[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState("");
   const [newAddressForm, setNewAddressForm] = useState({
     street: "",
@@ -47,12 +65,7 @@ export default function CheckoutPage() {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (res.data.success && res.data.data) {
-          const mappedAddresses = res.data.data.map((addr: any) => ({
-            id: addr._id,
-            name: addr.city?.toLowerCase() || 'Address',
-            line1: `${addr.street ? addr.street + ", " : ""}${addr.state?.toLowerCase() || ''}`,
-            line2: addr.zipCode,
-          }));
+          const mappedAddresses = (res.data.data as ApiAddress[]).map(toAddress);
           setAddresses(mappedAddresses);
           if (mappedAddresses.length > 0) {
             setSelectedAddressId(mappedAddresses[0].id);
@@ -107,13 +120,7 @@ export default function CheckoutPage() {
       });
 
       if (res.data.success) {
-        const newAddrs = res.data.data;
-        const mappedAddresses = newAddrs.map((addr: any) => ({
-          id: addr._id,
-          name: addr.city?.toLowerCase() || 'Address',
-          line1: `${addr.street ? addr.street + ", " : ""}${addr.state?.toLowerCase() || ''}`,
-          line2: addr.zipCode,
-        }));
+        const mappedAddresses = (res.data.data as ApiAddress[]).map(toAddress);
         setAddresses(mappedAddresses);
         if (mappedAddresses.length > 0) {
           setSelectedAddressId(mappedAddresses[mappedAddresses.length - 1].id);
@@ -124,9 +131,9 @@ export default function CheckoutPage() {
       } else {
         showToast(res.data.message || "Failed to save address", "error");
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      showToast(err.response?.data?.message || "Error saving address", "error");
+      showToast(authErrorMessage(err, "Error saving address"), "error");
     } finally {
       setIsSavingAddress(false);
     }
@@ -283,10 +290,10 @@ export default function CheckoutPage() {
 
         if (verifyRes.data.success) {
           clearCart();
-          window.location.href = "/order-success";
+          window.location.assign("/order-success");
         } else {
           setIsVerifyingPayment(false);
-          window.location.href = "/order-failure";
+          window.location.assign("/order-failure");
         }
         return;
       }
@@ -301,10 +308,10 @@ export default function CheckoutPage() {
         key: key_id, // Always the backend's key, so it matches the key that created the order
         amount: razorpayOrder.amount,
         currency: razorpayOrder.currency,
-        name: "Neokart",
+        name: "Belomi",
         description: isCod ? "Advance Payment (10%)" : "Order Payment",
         order_id: razorpayOrder.id,
-        handler: async function (response: any) {
+        handler: async function (response: RazorpayResponse) {
           setIsVerifyingPayment(true);
           try {
             const verifyRes = await axios.post(
@@ -319,20 +326,20 @@ export default function CheckoutPage() {
 
             if (verifyRes.data.success) {
               clearCart();
-              window.location.href = "/order-success";
+              window.location.assign("/order-success");
             } else {
               setIsVerifyingPayment(false);
-              window.location.href = "/order-failure";
+              window.location.assign("/order-failure");
             }
           } catch (err) {
             console.error(err);
             setIsVerifyingPayment(false);
-            window.location.href = "/order-failure";
+            window.location.assign("/order-failure");
           }
         },
         prefill: {
           name: "Customer",
-          email: "neokart007@gmail.com",
+          email: "belovi2026@gmail.com",
           contact: "9999999999"
         },
         theme: {
@@ -340,16 +347,16 @@ export default function CheckoutPage() {
         }
       };
 
-      const rzp = new (window as any).Razorpay(options);
-      rzp.on('payment.failed', function (response: any) {
-        window.location.href = "/order-failure";
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', function () {
+        window.location.assign("/order-failure");
       });
       rzp.open();
 
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
       setIsVerifyingPayment(false);
-      showToast(err.response?.data?.message || "An error occurred during checkout.", "error");
+      showToast(authErrorMessage(err, "An error occurred during checkout."), "error");
     } finally {
       setIsPlacingOrder(false);
     }
@@ -370,8 +377,8 @@ export default function CheckoutPage() {
   }
 
   return (
-    <div className="min-h-screen bg-ivory pt-[84px]">
-      <div className="max-w-[1500px] mx-auto px-6 sm:px-10 lg:px-16 pt-16 lg:pt-24 pb-24">
+    <div className="min-h-screen bg-ivory pt-21">
+      <div className="max-w-375 mx-auto px-6 sm:px-10 lg:px-16 pt-16 lg:pt-24 pb-24">
 
         {/* Header */}
         <Breadcrumbs className="mb-6" />
@@ -450,7 +457,7 @@ export default function CheckoutPage() {
                   {/* New Address tile */}
                   <button
                     onClick={() => setIsAddressModalOpen(true)}
-                    className="border border-dashed border-line-strong p-6 min-h-[120px] flex flex-col items-center justify-center gap-2 text-muted hover:border-ink hover:text-ink transition-colors"
+                    className="border border-dashed border-line-strong p-6 min-h-30 flex flex-col items-center justify-center gap-2 text-muted hover:border-ink hover:text-ink transition-colors"
                   >
                     <span className="text-2xl font-light leading-none">+</span>
                     <span className="eyebrow">New Address</span>
@@ -498,7 +505,7 @@ export default function CheckoutPage() {
                         </p>
                       </div>
                       <span
-                        className={`mt-1 w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 transition-colors ${
+                        className={`mt-1 w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
                           paymentMethod === "online" ? "border-ivory" : "border-line-strong"
                         }`}
                       >
@@ -528,7 +535,7 @@ export default function CheckoutPage() {
                         </p>
                       </div>
                       <span
-                        className={`mt-1 w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 transition-colors ${
+                        className={`mt-1 w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
                           paymentMethod === "cod" ? "border-ivory" : "border-line-strong"
                         }`}
                       >
@@ -565,17 +572,20 @@ export default function CheckoutPage() {
                 <p className="eyebrow text-bronze-deep mb-6">Order Bag</p>
 
                 {/* Cart Items List */}
-                <div className="flex flex-col gap-5 mb-8 max-h-[360px] overflow-y-auto pr-1 hide-scrollbar">
+                <div className="flex flex-col gap-5 mb-8 max-h-90 overflow-y-auto pr-1 hide-scrollbar">
                   {cartItems.length === 0 ? (
                     <p className="font-sans text-sm text-muted">Your order bag is empty.</p>
                   ) : (
                     cartItems.map((item) => (
                       <div key={item.id} className="flex gap-4">
-                        <div className="relative w-14 aspect-[4/5] bg-sand overflow-hidden flex-shrink-0">
-                          <img
-                            src={cldOptimize(item.image, 160)}
+                        <div className="relative w-14 aspect-4/5 bg-sand overflow-hidden shrink-0">
+                          <Image
+                            loader={cldLoader}
+                            src={item.image}
                             alt={item.name}
-                            className="w-full h-full object-cover"
+                            fill
+                            sizes="56px"
+                            className="object-cover"
                           />
                           <span className="absolute top-0 right-0 bg-ink text-ivory text-[10px] w-4 h-4 flex items-center justify-center">
                             {item.quantity}
@@ -591,7 +601,7 @@ export default function CheckoutPage() {
                             </p>
                           )}
                         </div>
-                        <p className="font-sans text-sm text-ink flex-shrink-0">
+                        <p className="font-sans text-sm text-ink shrink-0">
                           {item.currency}{item.price * item.quantity}
                         </p>
                       </div>
@@ -635,7 +645,7 @@ export default function CheckoutPage() {
                     : "Pay Now"}
                 </Button>
 
-                <p className="text-center font-sans text-[11px] text-muted mt-5 tracking-[0.1em] uppercase">
+                <p className="text-center font-sans text-[11px] text-muted mt-5 tracking-widest uppercase">
                   256-bit SSL Secured
                 </p>
               </div>

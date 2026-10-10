@@ -63,12 +63,14 @@ export default function MagneticCta({
         /* The pill is set wide and low: the bubble sets its height, so the
            height comes down by shrinking that and the vertical padding, and the
            width goes up on the left padding and the gap. Both move together —
-           taking height out alone would leave a stub, not a horizontal button. */
-        className={`group inline-flex items-center gap-4 font-sans font-medium
+           taking height out alone would leave a stub, not a horizontal button.
+           The left padding and the gap are the SAME value at each breakpoint, so
+           the label sits centred between the pill's edge and the arrow bubble. */
+        className={`group inline-flex items-center font-sans font-medium
           transition-[background-color,box-shadow] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
             isPill
-              ? "rounded-full bg-brand py-1.5 pl-10 pr-1.5 text-[16px] text-white hover:bg-[#FF6659] hover:shadow-[0_8px_32px_rgba(229,57,53,0.4)] sm:pl-12 sm:text-[18px]"
-              : "text-[16px] text-ink"
+              ? "gap-8 rounded-full bg-brand py-1.5 pl-8 pr-1.5 text-[16px] text-white hover:bg-[#FF6659] hover:shadow-[0_8px_32px_rgba(229,57,53,0.4)] sm:gap-10 sm:pl-10 sm:text-[18px]"
+              : "gap-4 text-[16px] text-ink"
           }`}
       >
         <span className="whitespace-nowrap">{label}</span>
