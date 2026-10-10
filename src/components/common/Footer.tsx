@@ -188,7 +188,7 @@ export default function Footer() {
           {/* Wordmark, set large — the footer's closing gesture in the design. */}
           <Reveal delay={0.1} className="mt-14 sm:mt-20">
             <Link href="/" aria-label="BELOVI — home" className="block">
-              <Logo className="h-[42px] w-auto sm:h-[64px] lg:h-[80px]" />
+              <Logo className="h-10.5 w-auto sm:h-16 lg:h-20" />
             </Link>
           </Reveal>
 
