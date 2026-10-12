@@ -188,86 +188,55 @@ export function formatINR(amount: number): string {
   return "₹" + Math.round(amount).toLocaleString("en-IN");
 }
 
-// ─── Collection-page facets ──────────────────────────────────────────────────
+// ─── Collection-page price filter ────────────────────────────────────────────
 
-export interface PriceBand {
-  id: string;
-  label: string;
+export interface PriceLimits {
   min: number;
-  /** Exclusive. `Infinity` for the open-ended top band. */
   max: number;
 }
 
+/** A price range, inclusive at both ends: [min, max]. */
+export type PriceRange = [number, number];
+
 /**
- * The price bands exactly as Figma draws them.
+ * The price slider's ends: the cheapest and the dearest piece that has a real
+ * price. `fromPrice` reads 0 for a piece with no priced variant, so `> 0` is
+ * the "has a price" rule; NaN and Infinity are dropped too.
  *
- * Ranges are half-open — `min <= price < max` — so a piece at exactly ₹2,000
- * lands in "2000 - 4000" and never in two bands at once. The labels overlap at
- * the boundaries because the design writes them that way; the arithmetic does
- * not.
+ * Floored and ceiled to whole rupees because the slider steps in ₹1 from its
+ * minimum. A fractional maximum would otherwise sit just past the last step,
+ * and the dearest piece could never be selected.
  *
- * ponytail: fixed bands, not derived from the catalogue's own spread. Today's
- * range is ₹500–₹100,000, so nearly everything sits in the top band; revisit
- * with quantile-derived bands once the catalogue is broad enough for that to
- * mean anything.
+ * Null when nothing is priced. `min === max` is a valid result (every piece
+ * at one price); the slider renders it disabled.
  */
-/**
- * Price bands DERIVED from the catalogue, rather than a fixed ladder.
- *
- * The five hardcoded bands here ran 0–10,000+, which is the wrong shape for a
- * furniture catalogue priced in the hundreds: every piece landed in the first
- * band and the other four were dead checkboxes. Bands are now cut to the prices
- * that actually exist, so they re-scale on their own as the studio's pricing
- * changes.
- *
- * The step is rounded to 1, 2 or 5 × a power of ten so the labels read as prices
- * a shopper would recognise rather than as arithmetic (`250 - 500`, not
- * `237 - 474`). The last band is open-ended because `inPriceBand` is
- * half-open — without it the single most expensive piece matches nothing.
- *
- * Returns `[]` when there is nothing to divide: fewer than two priced pieces, or
- * every piece at one price. The caller drops the filter entirely in that case.
- */
-export function priceBandsFor(prices: number[]): PriceBand[] {
+export function priceLimits(prices: number[]): PriceLimits | null {
   const valid = prices.filter((n) => Number.isFinite(n) && n > 0);
-  if (valid.length < 2) return [];
-
-  const min = Math.min(...valid);
-  const max = Math.max(...valid);
-  if (max <= min) return [];
-
-  const TARGET_BANDS = 4;
-  const rough = (max - min) / TARGET_BANDS;
-  const magnitude = Math.pow(10, Math.floor(Math.log10(rough)));
-  const step =
-    [1, 2, 5, 10].map((m) => m * magnitude).find((s) => (max - min) / s <= TARGET_BANDS) ??
-    magnitude * 10;
-
-  const money = (n: number) => Math.round(n).toLocaleString("en-IN");
-
-  const bands: PriceBand[] = [];
-  for (let lo = Math.floor(min / step) * step; lo < max; lo += step) {
-    bands.push({
-      id: `${lo}-${lo + step}`,
-      label: `${money(lo)} - ${money(lo + step)}`,
-      min: lo,
-      max: lo + step,
-    });
-  }
-
-  // Open the top band so the dearest piece is inside it.
-  const last = bands[bands.length - 1];
-  if (last) {
-    last.id = `${last.min}-plus`;
-    last.label = `${money(last.min)}+`;
-    last.max = Infinity;
-  }
-
-  return bands;
+  if (!valid.length) return null;
+  return { min: Math.floor(Math.min(...valid)), max: Math.ceil(Math.max(...valid)) };
 }
 
-export function inPriceBand(price: number, band: PriceBand): boolean {
-  return price >= band.min && price < band.max;
+/**
+ * The range actually filtering, or null for "no price filter".
+ *
+ * The shopper's selection is clamped into the current limits, which can move
+ * under it (a refetch, or a different edit section). A selection that covers
+ * the full limits is no filter at all, so the default view still includes
+ * pieces that have no price.
+ */
+export function activePriceRange(
+  selection: PriceRange | null,
+  limits: PriceLimits | null
+): PriceRange | null {
+  if (!selection || !limits) return null;
+  const lo = Math.min(Math.max(selection[0], limits.min), limits.max);
+  const hi = Math.min(Math.max(selection[1], lo), limits.max);
+  return lo > limits.min || hi < limits.max ? [lo, hi] : null;
+}
+
+/** Inclusive at both ends. An unpriced piece (0) never matches a set range. */
+export function inPriceRange(price: number, [lo, hi]: PriceRange): boolean {
+  return price > 0 && price >= lo && price <= hi;
 }
 
 /**

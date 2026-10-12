@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense, useMemo, useCallback } from "react";
+import { useState, useEffect, Suspense, useMemo, useCallback, useDeferredValue } from "react";
 import axios from "axios";
 import { useSearchParams } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
@@ -12,12 +12,15 @@ import { Button } from "../ui/Button";
 import { Skeleton } from "../ui/States";
 import Breadcrumbs from "../common/Breadcrumbs";
 import CollectionBanner from "./CollectionBanner";
-import FilterSidebar, { type Facet, type FilterGroupSpec } from "./FilterSidebar";
+import FilterSidebar, { type Facet, type FilterGroupSpec, type PriceFilterSpec } from "./FilterSidebar";
 import {
+  type PriceRange,
   type Product,
+  activePriceRange,
+  formatINR,
   fromPrice,
-  inPriceBand,
-  priceBandsFor,
+  inPriceRange,
+  priceLimits,
 } from "../../lib/product";
 import { slugify } from "../../lib/categories";
 
@@ -134,7 +137,8 @@ function BrowserContent({ scope, heading, breadcrumbLabel }: ProductBrowserProps
   const [selectedCategories, setSelectedCategories] = useState<string[]>(
     initialCategory ? [initialCategory] : []
   );
-  const [selectedPrices, setSelectedPrices] = useState<string[]>([]);
+  /** The shopper's price range; null until they move a handle. */
+  const [priceSelection, setPriceSelection] = useState<PriceRange | null>(null);
   const [searchTerm, setSearchTerm] = useState(initialSearch);
   const [sortBy, setSortBy] = useState("popularity");
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -247,22 +251,16 @@ function BrowserContent({ scope, heading, breadcrumbLabel }: ProductBrowserProps
     (id) => scoped.filter((p) => slugify(p.category) === id).length
   );
 
-  /* Bands cut to the prices that exist, so they re-scale as pricing changes.
-     Memoised once and used for BOTH the checkboxes and the filtering below —
-     two derivations of the same bands could disagree about what a tick means. */
-  const priceBands = useMemo(() => priceBandsFor(scoped.map(fromPrice)), [scoped]);
+  /* The slider's ends come from the whole scoped set, not the category-filtered
+     one, so picking a category never moves the handles out from under the
+     shopper's range. The API returns the full catalogue, so this is the true
+     cheapest and dearest piece, not one page's. */
+  const limits = useMemo(() => priceLimits(scoped.map(fromPrice)), [scoped]);
 
-  const priceFacets = useMemo<Facet[]>(
-    () =>
-      priceBands
-        .map((b) => ({
-          id: b.id,
-          label: b.label,
-          count: scoped.filter((p) => inPriceBand(fromPrice(p), b)).length,
-        }))
-        .filter((f) => f.count > 0),
-    [scoped, priceBands]
-  );
+  /* The handles follow every drag tick; the grid filters on a deferred copy,
+     so React can skip intermediate ticks instead of re-filtering on each one. */
+  const priceRange = activePriceRange(priceSelection, limits);
+  const deferredPriceSelection = useDeferredValue(priceSelection);
 
   // ── Filtering ─────────────────────────────────────────────────────────────
 
@@ -273,13 +271,13 @@ function BrowserContent({ scope, heading, breadcrumbLabel }: ProductBrowserProps
   );
 
   const filtered = useMemo(() => {
-    const bands = priceBands.filter((b) => selectedPrices.includes(b.id));
+    const range = activePriceRange(deferredPriceSelection, limits);
 
     const result = scoped.filter((p) => {
       const catOk =
         selectedCategories.length === 0 || selectedCategories.includes(slugify(p.category));
 
-      const priceOk = bands.length === 0 || bands.some((b) => inPriceBand(fromPrice(p), b));
+      const priceOk = !range || inPriceRange(fromPrice(p), range);
 
       const searchOk =
         searchTerm === "" ||
@@ -312,9 +310,9 @@ function BrowserContent({ scope, heading, breadcrumbLabel }: ProductBrowserProps
     }
   }, [
     scoped,
-    priceBands,
+    limits,
     selectedCategories,
-    selectedPrices,
+    deferredPriceSelection,
     searchTerm,
     sortBy,
     modeSlug,
@@ -354,8 +352,8 @@ function BrowserContent({ scope, heading, breadcrumbLabel }: ProductBrowserProps
 
      A group with no options is not rendered at all. That is the whole rule: a
      catalogue with nothing filed under a category shows no Categories filter,
-     and one with a single price shows no Price filter, rather than an empty panel section
-     the shopper has to read past to find out it is empty. */
+     rather than an empty panel section the shopper has to read past to find
+     out it is empty. Price is a slider, not a group — see `priceFilter`. */
   const groups: FilterGroupSpec[] = ([
     {
       key: "category",
@@ -364,27 +362,51 @@ function BrowserContent({ scope, heading, breadcrumbLabel }: ProductBrowserProps
       selected: selectedCategories,
       onToggle: toggleIn(setSelectedCategories),
     },
-    {
-      key: "price",
-      title: "Price",
-      options: priceFacets,
-      selected: selectedPrices,
-      onToggle: toggleIn(setSelectedPrices),
-    },
   ] as FilterGroupSpec[]).filter((g) => g.options.length > 0);
 
-  /** Every ticked box, flattened into the pill row, each able to remove itself. */
-  const activePills = groups.flatMap((g) =>
-    g.selected.map((id) => ({
-      key: `${g.key}:${id}`,
-      label: g.options.find((o) => o.id === id)?.label ?? prettify(id),
-      remove: () => g.onToggle(id),
-    }))
-  );
+  const clearPrice = () => {
+    setPriceSelection(null);
+    setPage(1);
+  };
+
+  /* Not rendered until the catalogue has loaded, so the panel never says "no
+     prices" while the request is still out or after it failed (the grid says
+     that instead, with a retry). */
+  const priceFilter: PriceFilterSpec | undefined = loading || failed
+    ? undefined
+    : {
+        limits,
+        value: priceRange ?? (limits ? [limits.min, limits.max] : [0, 0]),
+        onChange: (range) => {
+          setPriceSelection(range);
+          setPage(1);
+        },
+      };
+
+  /** Every ticked box and the price range, flattened into the pill row, each
+   *  able to remove itself. */
+  const activePills = [
+    ...groups.flatMap((g) =>
+      g.selected.map((id) => ({
+        key: `${g.key}:${id}`,
+        label: g.options.find((o) => o.id === id)?.label ?? prettify(id),
+        remove: () => g.onToggle(id),
+      }))
+    ),
+    ...(priceRange
+      ? [
+          {
+            key: "price",
+            label: `${formatINR(priceRange[0])} – ${formatINR(priceRange[1])}`,
+            remove: clearPrice,
+          },
+        ]
+      : []),
+  ];
 
   const clearAll = () => {
     setSelectedCategories([]);
-    setSelectedPrices([]);
+    setPriceSelection(null);
     setSearchTerm("");
     setPage(1);
   };
@@ -440,7 +462,7 @@ function BrowserContent({ scope, heading, breadcrumbLabel }: ProductBrowserProps
           {/* ── Desktop rail ─────────────────────────────────────────────── */}
           <aside className="hidden shrink-0 lg:block lg:w-[290px] xl:w-[315px]">
             <div className="sticky top-[126px]">
-              <FilterSidebar groups={groups} />
+              <FilterSidebar groups={groups} price={priceFilter} />
             </div>
           </aside>
 
@@ -476,7 +498,7 @@ function BrowserContent({ scope, heading, breadcrumbLabel }: ProductBrowserProps
                       <X size={18} />
                     </button>
                   </div>
-                  <FilterSidebar groups={groups} bare className="px-6 py-6" />
+                  <FilterSidebar groups={groups} price={priceFilter} bare className="px-6 py-6" />
                 </motion.div>
               </>
             )}
