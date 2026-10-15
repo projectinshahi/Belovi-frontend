@@ -308,7 +308,7 @@ export default function CheckoutPage() {
         key: key_id, // Always the backend's key, so it matches the key that created the order
         amount: razorpayOrder.amount,
         currency: razorpayOrder.currency,
-        name: "Belomi",
+        name: "Belovi",
         description: isCod ? "Advance Payment (10%)" : "Order Payment",
         order_id: razorpayOrder.id,
         handler: async function (response: RazorpayResponse) {
@@ -512,52 +512,6 @@ export default function CheckoutPage() {
                         {paymentMethod === "online" && <span className="w-2 h-2 rounded-full bg-ivory" />}
                       </span>
                     </div>
-                  </button>
-
-                  {/* Cash on Delivery */}
-                  <button
-                    onClick={() => setPaymentMethod("cod")}
-                    aria-pressed={paymentMethod === "cod"}
-                    className={`text-left border p-6 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ink ${
-                      paymentMethod === "cod"
-                        // Selected reads as an inverted card — the light type,
-                        // ring and dot inside it were written for a dark fill
-                        // (`cream` used to be #111). `ink` is that fill.
-                        ? "border-ink bg-ink"
-                        : "border-line-strong bg-white hover:border-ink"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <p className={`font-sans font-medium ${paymentMethod === "cod" ? "text-ivory" : "text-ink"}`}>Cash on Delivery</p>
-                        <p className={`font-sans text-sm leading-relaxed mt-1 ${paymentMethod === "cod" ? "text-ivory/75" : "text-muted"}`}>
-                          Pay a 10% advance online now; pay the balance in cash on delivery.
-                        </p>
-                      </div>
-                      <span
-                        className={`mt-1 w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
-                          paymentMethod === "cod" ? "border-ivory" : "border-line-strong"
-                        }`}
-                      >
-                        {paymentMethod === "cod" && <span className="w-2 h-2 rounded-full bg-ivory" />}
-                      </span>
-                    </div>
-
-                    {paymentMethod === "cod" && (
-                      // This breakdown only renders while COD is selected, i.e.
-                      // always inside the inverted (dark) card — so it takes the
-                      // light type, not the page's.
-                      <div className="mt-5 pt-5 border-t border-ivory/20 flex flex-col gap-2">
-                        <div className="flex justify-between font-sans text-sm">
-                          <span className="text-ivory/75">Advance now (10%)</span>
-                          <span className="font-medium text-ivory">₹{advanceAmount.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between font-sans text-sm">
-                          <span className="text-ivory/75">Balance on delivery</span>
-                          <span className="font-medium text-ivory">₹{balanceAmount.toFixed(2)}</span>
-                        </div>
-                      </div>
-                    )}
                   </button>
                 </div>
               </div>
