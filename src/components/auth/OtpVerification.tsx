@@ -39,7 +39,8 @@ export default function OtpVerification({
   /** A resend returns fresh deadlines. */
   onPendingChange: (next: PendingVerification) => void;
   onVerified: (session: Session) => void | Promise<void>;
-  onChangeEmail: () => void;
+  /** Back to the form; `reason` is shown there when the server ended the attempt. */
+  onChangeEmail: (reason?: string) => void;
 }) {
   const [otp, setOtp] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -83,7 +84,12 @@ export default function OtpVerification({
       if (!session?.token) throw new Error("no session returned");
       await onVerified(session);
     } catch (err) {
-      setError(authErrorMessage(err, "We couldn't verify that code. Please try again."));
+      const message = authErrorMessage(err, "We couldn't verify that code. Please try again.");
+      // 404: the pending registration is gone. 429 here: too many wrong codes,
+      // and the server has discarded it. Either way this code box is dead.
+      const status = axios.isAxiosError(err) ? err.response?.status : undefined;
+      if (status === 404 || status === 429) return onChangeEmail(message);
+      setError(message);
       setOtp("");
       inputRef.current?.focus();
     } finally {
@@ -105,7 +111,9 @@ export default function OtpVerification({
       setNotice("A new code is on its way.");
       inputRef.current?.focus();
     } catch (err) {
-      setError(authErrorMessage(err, "Could not send a new code. Please try again."));
+      const message = authErrorMessage(err, "Could not send a new code. Please try again.");
+      if (axios.isAxiosError(err) && err.response?.status === 404) return onChangeEmail(message);
+      setError(message);
     } finally {
       setResending(false);
     }
@@ -211,7 +219,7 @@ export default function OtpVerification({
         </p>
         <button
           type="button"
-          onClick={onChangeEmail}
+          onClick={() => onChangeEmail()}
           className="font-sans text-sm text-muted transition-colors hover:text-ink"
         >
           Wrong address?{" "}

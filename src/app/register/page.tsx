@@ -43,6 +43,32 @@ import {
  * Validating here as well means a weak password is caught before a round trip
  * and the rule shown under the field is the rule actually enforced.
  */
+/**
+ * The verification step survives a refresh in this tab: only the address and
+ * the two deadlines are kept — never the password or the code — and
+ * sessionStorage is gone when the tab closes.
+ */
+const PENDING_KEY = "belovi_pending_verification";
+
+function readStoredPending(): PendingVerification | null {
+  try {
+    const raw = sessionStorage.getItem(PENDING_KEY);
+    const p = raw ? (JSON.parse(raw) as PendingVerification) : null;
+    return p?.email && p.expiresAt && p.resendAvailableAt ? p : null;
+  } catch {
+    return null;
+  }
+}
+
+function storePending(p: PendingVerification | null) {
+  try {
+    if (p) sessionStorage.setItem(PENDING_KEY, JSON.stringify(p));
+    else sessionStorage.removeItem(PENDING_KEY);
+  } catch {
+    // Storage blocked (private mode): the flow still works, just not across a refresh.
+  }
+}
+
 function RegisterContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -52,8 +78,19 @@ function RegisterContent() {
   const { showToast } = useToast();
   const { syncCartAfterLogin } = useCart();
 
+  /** Set once a code has been mailed; its presence is what shows step two.
+   *  Read from storage on first render — `useSearchParams` makes this subtree
+   *  render in the browser only, so there is no server render to mismatch. */
+  const [pending, setPendingState] = useState<PendingVerification | null>(() =>
+    typeof window === "undefined" ? null : readStoredPending()
+  );
+  const setPending = (next: PendingVerification | null) => {
+    setPendingState(next);
+    storePending(next);
+  };
+
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(() => pending?.email ?? "");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [errors, setErrors] = useState<{
@@ -64,14 +101,13 @@ function RegisterContent() {
   }>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  /** Set once a code has been mailed; its presence is what shows step two. */
-  const [pending, setPending] = useState<PendingVerification | null>(null);
 
   const clear = (key: keyof typeof errors) =>
     setErrors((p) => ({ ...p, [key]: undefined }));
 
   /** Shared ending for both routes in: store the session, then go home. */
   const completeSignIn = async (session: Session, message: string) => {
+    storePending(null);
     saveSession(session);
     // Same post-auth step the Google flow runs: fold the guest bag into the
     // account and restore anything saved on a previous visit.
@@ -157,10 +193,12 @@ function RegisterContent() {
                 completeSignIn(session, "Email verified. Welcome to BELOVI.")
               }
               // Back to step one with everything still typed in, so correcting a
-              // mistyped address costs one edit rather than the whole form.
-              onChangeEmail={() => {
+              // mistyped address costs one edit rather than the whole form. Also
+              // where the server sends us when the pending registration is gone,
+              // carrying its reason to show above the form.
+              onChangeEmail={(reason) => {
                 setPending(null);
-                setFormError(null);
+                setFormError(reason ?? null);
               }}
             />
           ) : (

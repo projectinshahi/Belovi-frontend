@@ -136,11 +136,15 @@ export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** The password rule, in the words shown under the field. */
 export const PASSWORD_HINT =
-  "At least 8 characters, with an uppercase and a lowercase letter, a number and a symbol.";
+  "8–64 characters, with an uppercase and a lowercase letter, a number and a symbol.";
 
 export function validatePassword(value: string): string | null {
   if (!value) return "Password is required.";
   if (value.length < 8) return "Password must be at least 8 characters.";
+  if (value.length > 64) return "Password must be 64 characters or fewer.";
+  // The backend refuses more than 72 bytes (bcrypt's limit) rather than
+  // silently ignoring the rest; only reachable with many non-Latin characters.
+  if (new TextEncoder().encode(value).length > 72) return "Password is too long.";
   if (!/[A-Z]/.test(value)) return "Password needs an uppercase letter.";
   if (!/[a-z]/.test(value)) return "Password needs a lowercase letter.";
   if (!/[0-9]/.test(value)) return "Password needs a number.";
@@ -150,6 +154,7 @@ export function validatePassword(value: string): string | null {
 
 export function validateEmail(value: string): string | null {
   if (!value.trim()) return "Email address is required.";
+  if (value.trim().length > 254) return "Email address is too long.";
   if (!EMAIL_RE.test(value.trim())) return "Enter a valid email address.";
   return null;
 }
@@ -157,5 +162,7 @@ export function validateEmail(value: string): string | null {
 export function validateName(value: string): string | null {
   if (!value.trim()) return "Full name is required.";
   if (value.trim().length < 2) return "Name must be at least 2 characters.";
+  if (value.trim().length > 100) return "Name must be 100 characters or fewer.";
+  if (/\p{Cc}/u.test(value)) return "Name contains characters that are not allowed.";
   return null;
 }
