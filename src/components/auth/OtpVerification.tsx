@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { MailCheck } from "lucide-react";
 import { Button } from "../ui/Button";
-import { authApiBase, authErrorMessage, type Session } from "../../lib/auth";
+import { authApiBase, authErrorMessage } from "../../lib/auth";
 
 /**
  * Enter the code we emailed.
@@ -13,6 +13,9 @@ import { authApiBase, authErrorMessage, type Session } from "../../lib/auth";
  * only needs the address and the code. A refresh therefore loses nothing
  * sensitive, and the account is built from the server's record — this screen
  * cannot influence which address the account ends up with.
+ *
+ * A correct code creates the account and nothing more: the response carries no
+ * session, and the customer signs in separately afterwards.
  */
 
 /** mm:ss, for both countdowns. */
@@ -38,7 +41,8 @@ export default function OtpVerification({
   pending: PendingVerification;
   /** A resend returns fresh deadlines. */
   onPendingChange: (next: PendingVerification) => void;
-  onVerified: (session: Session) => void | Promise<void>;
+  /** The account was created (201). Not signed in. */
+  onVerified: () => void | Promise<void>;
   /** Back to the form; `reason` is shown there when the server ended the attempt. */
   onChangeEmail: (reason?: string) => void;
 }) {
@@ -80,9 +84,9 @@ export default function OtpVerification({
         email: pending.email,
         otp,
       });
-      const session = res.data?.data as Session | undefined;
-      if (!session?.token) throw new Error("no session returned");
-      await onVerified(session);
+      // Success only on the server's word that the account now exists.
+      if (res.status !== 201) throw new Error("account not created");
+      await onVerified();
     } catch (err) {
       const message = authErrorMessage(err, "We couldn't verify that code. Please try again.");
       // 404: the pending registration is gone. 429 here: too many wrong codes,
@@ -197,7 +201,7 @@ export default function OtpVerification({
           disabled={submitting || expired || otp.length !== 6}
           className="mt-1 w-full"
         >
-          {submitting ? "Verifying…" : "Verify OTP"}
+          {submitting ? "Creating your account…" : "Verify & Create Account"}
         </Button>
       </form>
 

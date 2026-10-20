@@ -13,18 +13,16 @@ import EditorialImage from "../../components/ui/EditorialImage";
 import Breadcrumbs from "../../components/common/Breadcrumbs";
 import { Button } from "../../components/ui/Button";
 import { useToast } from "../../context/ToastContext";
-import { useCart } from "../../context/CartContext";
 import {
   PASSWORD_HINT,
   REDIRECT_PARAM,
   authApiBase,
   authErrorMessage,
   safeRedirect,
-  saveSession,
+  signInHref,
   validateEmail,
   validateName,
   validatePassword,
-  type Session,
 } from "../../lib/auth";
 
 /**
@@ -76,7 +74,6 @@ function RegisterContent() {
   // piece rather than the homepage.
   const returnTo = safeRedirect(searchParams.get(REDIRECT_PARAM));
   const { showToast } = useToast();
-  const { syncCartAfterLogin } = useCart();
 
   /** Set once a code has been mailed; its presence is what shows step two.
    *  Read from storage on first render — `useSearchParams` makes this subtree
@@ -105,15 +102,17 @@ function RegisterContent() {
   const clear = (key: keyof typeof errors) =>
     setErrors((p) => ({ ...p, [key]: undefined }));
 
-  /** Shared ending for both routes in: store the session, then go home. */
-  const completeSignIn = async (session: Session, message: string) => {
+  /**
+   * The account exists; nobody is signed in. Registration and sign-in are
+   * separate on purpose: the customer signs in on /sign-in with the email and
+   * password they just chose, and only that creates a session (and merges the
+   * guest bag). Where they were heading travels along in the redirect param.
+   */
+  const finishRegistration = () => {
     storePending(null);
-    saveSession(session);
-    // Same post-auth step the Google flow runs: fold the guest bag into the
-    // account and restore anything saved on a previous visit.
-    await syncCartAfterLogin();
-    showToast(message, "success");
-    router.push(returnTo);
+    showToast("Registration successful! Please log in using your email address and password.", "success");
+    const href = signInHref(returnTo);
+    router.push(`${href}${href.includes("?") ? "&" : "?"}registered=1`);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -189,9 +188,7 @@ function RegisterContent() {
             <OtpVerification
               pending={pending}
               onPendingChange={setPending}
-              onVerified={(session) =>
-                completeSignIn(session, "Email verified. Welcome to BELOVI.")
-              }
+              onVerified={finishRegistration}
               // Back to step one with everything still typed in, so correcting a
               // mistyped address costs one edit rather than the whole form. Also
               // where the server sends us when the pending registration is gone,
