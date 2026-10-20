@@ -46,6 +46,8 @@ function SignInContent() {
    * same-origin path; see `safeRedirect`.
    */
   const returnTo = safeRedirect(searchParams.get(REDIRECT_PARAM));
+  /** Arrived straight from creating an account, which does not sign anyone in. */
+  const justRegistered = searchParams.get("registered") === "1";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -131,6 +133,14 @@ function SignInContent() {
           </p>
 
           <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-5">
+            {justRegistered && !formError && (
+              <div
+                role="status"
+                className="border border-line-strong bg-cream px-4 py-3 font-sans text-[13px] text-ink"
+              >
+                Registration successful! Please log in using your email address and password.
+              </div>
+            )}
             {formError && (
               <div
                 role="alert"
