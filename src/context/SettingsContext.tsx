@@ -17,7 +17,7 @@ interface SiteSettings {
 // Matches the backend's SiteSettings defaults, so the first paint before the
 // request lands shows the same values it will settle on.
 const defaultSettings: SiteSettings = {
-  whatsappNumber: "917736830303",
+  whatsappNumber: "918848415285",
   contactEmail: "belovi2026@gmail.com",
   contactPhone: "",
   addressLine: "",
