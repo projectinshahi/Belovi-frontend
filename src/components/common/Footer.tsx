@@ -72,6 +72,7 @@ const Ic = {
  * honest, a fabricated one is not.
  */
 const FALLBACK_EMAIL = "belovi2026@gmail.com";
+const FOOTER_WHATSAPP_URL = "https://wa.me/918848415285";
 
 /* Instagram only. The Facebook and X entries here were guessed URLs for
    accounts that may not exist — a dead social link costs more trust than a
@@ -90,7 +91,7 @@ const linkClass =
   "font-sans text-[15px] text-white/85 transition-colors duration-300 hover:text-brand sm:text-[17px]";
 
 export default function Footer() {
-  const { whatsappNumber, contactEmail, contactPhone, addressLine } = useSettings();
+  const { contactEmail, contactPhone, addressLine } = useSettings();
 
   return (
     <footer className="surface-dark w-full bg-onyx-soft text-ink">
@@ -117,7 +118,7 @@ export default function Footer() {
                 ))}
               </nav>
               <a
-                href={`https://wa.me/${whatsappNumber}`}
+                href={FOOTER_WHATSAPP_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className={linkClass}
